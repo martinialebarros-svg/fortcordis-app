@@ -4368,7 +4368,7 @@ elif menu_principal == "📅 Agendamentos":
         
         observacoes_agend = st.text_area("Observações", key="novo_agend_obs", height=100)
         
-        if st.button("✅ Criar Agendamento", type="primary", width="stretch"):
+        if st.button("✅ Criar Agendamento", type="primary", use_container_width=True):
             if not paciente_agend:
                 st.error("O nome do paciente é obrigatório!")
             else:
@@ -5044,7 +5044,7 @@ elif menu_principal == "📋 Prontuário":
             if not tutores_df.empty:
                 tutores_df['Contato'] = tutores_df['Contato'].fillna('Não informado')
                 
-                st.dataframe(tutores_df.drop('id', axis=1), width="stretch", hide_index=True)
+                st.dataframe(tutores_df.drop('id', axis=1), use_container_width=True, hide_index=True)
                 st.caption(f"Total: {len(tutores_df)} tutor(es)")
             else:
                 st.info("Nenhum tutor cadastrado ainda")
@@ -5263,7 +5263,7 @@ elif menu_principal == "📋 Prontuário":
                 pacientes_df['Raça'] = pacientes_df['Raça'].fillna('SRD')
                 pacientes_df['Contato'] = pacientes_df['Contato'].fillna('Não informado')
                 
-                st.dataframe(pacientes_df.drop('id', axis=1), width="stretch", hide_index=True)
+                st.dataframe(pacientes_df.drop('id', axis=1), use_container_width=True, hide_index=True)
                 st.caption(f"Total: {len(pacientes_df)} paciente(s)")
             else:
                 st.info("Nenhum paciente cadastrado ainda")
@@ -5740,7 +5740,7 @@ elif menu_principal == "📋 Prontuário":
                     
                     st.dataframe(
                         consultas_df.drop('id', axis=1),
-                        width="stretch",
+                        use_container_width=True,
                         hide_index=True
                     )
                     
@@ -6612,7 +6612,7 @@ elif menu_principal == "🩺 Laudos e Exames":
             for idx, it in enumerate(imgs_carregadas):
                 b = it.get("bytes") if isinstance(it, dict) else None
                 if b:
-                    cols[idx % 4].image(b, width="stretch")
+                    cols[idx % 4].image(b, use_container_width=True)
 
             cL, cR = st.columns([1, 3])
             with cL:
@@ -6632,7 +6632,7 @@ elif menu_principal == "🩺 Laudos e Exames":
         if novas:
             cols = st.columns(4)
             for idx, img in enumerate(novas):
-                cols[idx % 4].image(img, width="stretch")
+                cols[idx % 4].image(img, use_container_width=True)
 
     with tab5:
         st.header("⚙️ Editor de Frases")
@@ -6791,7 +6791,7 @@ elif menu_principal == "🩺 Laudos e Exames":
                 horizontal=True
             )
 
-            if st.button("➕ Adicionar", width="stretch"):
+            if st.button("➕ Adicionar", use_container_width=True):
                 nova = (nova_chave or "").strip()
                 if not nova:
                     st.error("Informe um nome para a nova patologia.")
@@ -6827,7 +6827,7 @@ elif menu_principal == "🩺 Laudos e Exames":
 
             st.divider()
 
-            if st.button("💾 Salvar frases", width="stretch"):
+            if st.button("💾 Salvar frases", use_container_width=True):
                 with open(ARQUIVO_FRASES, "w", encoding="utf-8") as f:
                     json.dump(db, f, indent=4, ensure_ascii=False)
                 st.session_state["db_frases"] = db
@@ -6836,7 +6836,7 @@ elif menu_principal == "🩺 Laudos e Exames":
 
             st.divider()
 
-            if st.button("🗑️ Excluir patologia selecionada", width="stretch"):
+            if st.button("🗑️ Excluir patologia selecionada", use_container_width=True):
                 if chave_sel in db:
                     del db[chave_sel]
                     with open(ARQUIVO_FRASES, "w", encoding="utf-8") as f:
@@ -6883,7 +6883,7 @@ elif menu_principal == "🩺 Laudos e Exames":
             st.session_state[session_key_local] = df_ref_local
 
         st.caption("Edite a tabela abaixo, salve, ou importe um CSV. A referência será usada automaticamente onde houver mapeamento.")
-        df_edit = st.data_editor(df_ref_local, num_rows="dynamic", width="stretch")
+        df_edit = st.data_editor(df_ref_local, num_rows="dynamic", use_container_width=True)
 
         colA, colB, colC = st.columns([1.2, 1.2, 1.2])
 
@@ -6972,7 +6972,7 @@ elif menu_principal == "🩺 Laudos e Exames":
             colunas_exib = ["data", "clinica", "animal", "tutor", "tipo_exame"]
             df_uniq = df_banco[colunas_exib].drop_duplicates(keep="first")
             n_uniq, n_total = len(df_uniq), len(df_banco)
-            st.dataframe(df_uniq, width="stretch", hide_index=True)
+            st.dataframe(df_uniq, use_container_width=True, hide_index=True)
             texto_total = f"**{n_uniq}** exame(s) únicos" + (f" (de **{n_total}** no banco — repetidos por importações anteriores; importe o backup **apenas uma vez**)." if n_uniq < n_total else ".")
             st.caption(
                 f"{texto_total} "
@@ -7007,7 +7007,7 @@ elif menu_principal == "🩺 Laudos e Exames":
             df_arq = pd.DataFrame(laudos_arq)
             df_arq["data"] = df_arq["data"].astype(str)
             colunas_exib_arq = ["data", "clinica", "animal", "tutor", "tipo_exame"]
-            st.dataframe(df_arq[colunas_exib_arq], width="stretch", hide_index=True)
+            st.dataframe(df_arq[colunas_exib_arq], use_container_width=True, hide_index=True)
             st.caption(f"**{len(laudos_arq)}** exame(s) da pasta no banco.")
             opcoes_arq = [f'{r["data"]} | {r["animal"]} | {r["tutor"]} | {r["clinica"]}' for r in laudos_arq]
             idx_arq = st.selectbox("Selecione um exame para baixar (JSON/PDF)", range(len(opcoes_arq)), format_func=lambda i: opcoes_arq[i], key="sel_laudo_arquivo")
@@ -7122,7 +7122,7 @@ elif menu_principal == "🩺 Laudos e Exames":
             df_f = df_busca[m].sort_values(["data_dt", "clinica", "animal"], ascending=[False, True, True])
 
             st.write(f"**Resultados:** {len(df_f)}")
-            st.dataframe(df_f[["data", "clinica", "animal", "tutor"]], width="stretch", hide_index=True)
+            st.dataframe(df_f[["data", "clinica", "animal", "tutor"]], use_container_width=True, hide_index=True)
 
             st.markdown("---")
             st.subheader("Baixar arquivo do exame encontrado")
@@ -7137,7 +7137,7 @@ elif menu_principal == "🩺 Laudos e Exames":
                 row = df_f.iloc[idx_sel]
 
                 st.markdown("### Ações")
-                if st.button("📥 Carregar exame para edição", width="stretch"):
+                if st.button("📥 Carregar exame para edição", use_container_width=True):
                     st.session_state["__carregar_exame_json_path"] = row["arquivo_json"]
                     st.rerun()
 
@@ -7587,7 +7587,7 @@ elif menu_principal == "🩺 Laudos e Exames":
                 data=st.session_state["pdf_pa_bytes"],
                 file_name=f"{nome_base_pa}.pdf",
                 mime="application/pdf",
-                width="stretch"
+                use_container_width=True
             )
 
 
@@ -9047,7 +9047,7 @@ elif menu_principal == "💰 Financeiro":
             if not contas.empty:
                 contas_display = contas.drop(columns=["id"], errors="ignore")
                 contas_display["Valor"] = contas_display["Valor"].apply(lambda x: f"R$ {float(x):,.2f}" if x is not None else "—")
-                st.dataframe(contas_display, width="stretch", hide_index=True)
+                st.dataframe(contas_display, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhuma OS gerada ainda. Faça um laudo para gerar a primeira!")
         except sqlite3.OperationalError:
@@ -9064,7 +9064,7 @@ elif menu_principal == "💰 Financeiro":
                     contas_display = contas.drop(columns=["id"], errors="ignore")
                     if "Valor" in contas_display.columns:
                         contas_display["Valor"] = contas_display["Valor"].apply(lambda x: f"R$ {float(x):,.2f}" if x is not None else "—")
-                    st.dataframe(contas_display, width="stretch", hide_index=True)
+                    st.dataframe(contas_display, use_container_width=True, hide_index=True)
                 else:
                     st.info("Nenhuma OS gerada ainda. Faça um laudo para gerar a primeira!")
             except Exception:
@@ -9221,7 +9221,7 @@ elif menu_principal == "🏢 Cadastros":
             """, conn)
             
             if not clinicas.empty:
-                st.dataframe(clinicas.drop('id', axis=1), width="stretch", hide_index=True)
+                st.dataframe(clinicas.drop('id', axis=1), use_container_width=True, hide_index=True)
                 st.caption(f"Total: {len(clinicas)} clínica(s)")
                 
                 # ========== EDITAR/EXCLUIR ==========
@@ -9361,7 +9361,7 @@ elif menu_principal == "🏢 Cadastros":
             if not servicos.empty:
                 servicos_display = servicos.copy()
                 servicos_display['Valor Base'] = servicos_display['Valor Base'].apply(lambda x: f"R$ {float(x):,.2f}")
-                st.dataframe(servicos_display, width="stretch", hide_index=True)
+                st.dataframe(servicos_display, use_container_width=True, hide_index=True)
             else:
                 st.warning("⚠️ Execute o script inicializar_dados.py ou reinicie o app para popular os serviços")
             
@@ -9489,7 +9489,7 @@ elif menu_principal == "🏢 Cadastros":
                                     st.rerun()
                             resumo = df_preco[['Serviço', 'valor']].copy()
                             resumo['Valor (R$)'] = resumo['valor'].apply(lambda x: f"R$ {float(x):,.2f}")
-                            st.dataframe(resumo[['Serviço', 'Valor (R$)']], width="stretch", hide_index=True)
+                            st.dataframe(resumo[['Serviço', 'Valor (R$)']], use_container_width=True, hide_index=True)
                         else:
                             st.caption("Nenhum valor cadastrado para esta tabela. Use «Incluir serviço» acima.")
             else:
@@ -9682,7 +9682,7 @@ elif menu_principal == "⚙️ Configurações":
                 # Exibe tabela
                 st.dataframe(
                     df_display,
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True
                 )
                 
@@ -9845,7 +9845,7 @@ elif menu_principal == "⚙️ Configurações":
                                 })
                             
                             df_perms = pd.DataFrame(dados_tabela)
-                            st.dataframe(df_perms, width="stretch", hide_index=True)
+                            st.dataframe(df_perms, use_container_width=True, hide_index=True)
                             
                             # Detalhes expandíveis
                             with st.expander("🔍 Ver Detalhes das Permissões"):
@@ -10888,11 +10888,11 @@ elif menu_principal == "⚙️ Configurações":
                 st.warning("Nenhuma assinatura definida. Envie uma imagem para usar nos laudos.")
             col_a, col_b = st.columns(2)
             with col_a:
-                if st.button("🔁 Trocar assinatura", key="config_trocar_assin", width="stretch"):
+                if st.button("🔁 Trocar assinatura", key="config_trocar_assin", use_container_width=True):
                     st.session_state["trocar_assinatura"] = True
                     st.rerun()
             with col_b:
-                if st.button("🗑️ Remover assinatura", key="config_remover_assin", width="stretch"):
+                if st.button("🗑️ Remover assinatura", key="config_remover_assin", use_container_width=True):
                     try:
                         if os.path.exists(ASSINATURA_PATH):
                             os.remove(ASSINATURA_PATH)
