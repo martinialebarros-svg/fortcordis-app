@@ -10180,51 +10180,78 @@ elif menu_principal == "⚙️ Configurações":
                             map_tutor = {}
                             map_paciente = {}
                             total_c, total_t, total_p, total_l, total_cp = 0, 0, 0, 0, 0
-                            # 1) Clinicas (tabela simples) — evita duplicata por nome_key
+                            # 1) Clinicas (tabela simples) — evita duplicata por nome_key (gerar nome_key se não existir no backup)
                             try:
-                                cur_b.execute("SELECT id, nome, nome_key, created_at FROM clinicas")
+                                cur_b.execute("PRAGMA table_info(clinicas)")
+                                cols_c = [c[1] for c in cur_b.fetchall()]
+                                tem_nome_key = "nome_key" in cols_c
+                                tem_created = "created_at" in cols_c
+                                sel_c = "SELECT id, nome, nome_key, created_at FROM clinicas" if tem_nome_key else ("SELECT id, nome, created_at FROM clinicas" if tem_created else "SELECT id, nome FROM clinicas")
+                                cur_b.execute(sel_c)
                                 for row in cur_b.fetchall():
-                                    r = cur_l.execute("SELECT id FROM clinicas WHERE nome_key=?", (row["nome_key"],)).fetchone()
+                                    row = dict(row)
+                                    nome_key = (row.get("nome_key") or "").strip() if tem_nome_key else _norm_key(row.get("nome") or "")
+                                    if not nome_key:
+                                        nome_key = _norm_key(row.get("nome") or "") or "sem_nome"
+                                    r = cur_l.execute("SELECT id FROM clinicas WHERE nome_key=?", (nome_key,)).fetchone()
                                     if r:
                                         novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
                                     else:
                                         cur_l.execute(
                                             "INSERT INTO clinicas (nome, nome_key, created_at) VALUES (?,?,?)",
-                                            (row["nome"], row["nome_key"], row["created_at"] or datetime.now().isoformat()),
+                                            (row.get("nome") or "", nome_key, row.get("created_at") if tem_created else datetime.now().isoformat()),
                                         )
                                         novo_id = cur_l.lastrowid
                                         total_c += 1
                                     map_clinica[int(row["id"])] = novo_id
                             except sqlite3.OperationalError as e:
                                 erros_import.append(("clinicas", str(e)))
-                            # 2) Tutores — evita duplicata por nome_key
+                            # 2) Tutores — evita duplicata por nome_key (gerar nome_key se não existir no backup)
                             try:
-                                cur_b.execute("SELECT id, nome, nome_key, telefone, created_at FROM tutores")
+                                cur_b.execute("PRAGMA table_info(tutores)")
+                                cols_t = [c[1] for c in cur_b.fetchall()]
+                                tem_nome_key_t = "nome_key" in cols_t
+                                tem_created_t = "created_at" in cols_t
+                                sel_t = "SELECT id, nome, nome_key, telefone, created_at FROM tutores" if tem_nome_key_t else ("SELECT id, nome, telefone, created_at FROM tutores" if tem_created_t else "SELECT id, nome, telefone FROM tutores")
+                                cur_b.execute(sel_t)
                                 for row in cur_b.fetchall():
-                                    r = cur_l.execute("SELECT id FROM tutores WHERE nome_key=?", (row["nome_key"],)).fetchone()
+                                    row = dict(row)
+                                    nome_key_t = (row.get("nome_key") or "").strip() if tem_nome_key_t else _norm_key(row.get("nome") or "")
+                                    if not nome_key_t:
+                                        nome_key_t = _norm_key(row.get("nome") or "") or "sem_nome"
+                                    r = cur_l.execute("SELECT id FROM tutores WHERE nome_key=?", (nome_key_t,)).fetchone()
                                     if r:
                                         novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
                                     else:
                                         cur_l.execute(
                                             "INSERT INTO tutores (nome, nome_key, telefone, created_at) VALUES (?,?,?,?)",
-                                            (row["nome"], row["nome_key"], row["telefone"] or None, row["created_at"] or datetime.now().isoformat()),
+                                            (row.get("nome") or "", nome_key_t, row.get("telefone") or None, row.get("created_at") if tem_created_t else datetime.now().isoformat()),
                                         )
                                         novo_id = cur_l.lastrowid
                                         total_t += 1
                                     map_tutor[int(row["id"])] = novo_id
                             except sqlite3.OperationalError as e:
                                 erros_import.append(("tutores", str(e)))
-                            # 3) Pacientes (usar map_tutor; evita duplicata por tutor_id + nome_key + especie)
+                            # 3) Pacientes (usar map_tutor; evita duplicata por tutor_id + nome_key + especie; gerar nome_key se não existir no backup)
                             try:
-                                cur_b.execute("SELECT id, tutor_id, nome, nome_key, especie, raca, sexo, nascimento, created_at FROM pacientes")
+                                cur_b.execute("PRAGMA table_info(pacientes)")
+                                cols_p = [c[1] for c in cur_b.fetchall()]
+                                tem_nome_key_p = "nome_key" in cols_p
+                                tem_created_p = "created_at" in cols_p
+                                sel_p = "SELECT id, tutor_id, nome, nome_key, especie, raca, sexo, nascimento, created_at FROM pacientes" if tem_nome_key_p else ("SELECT id, tutor_id, nome, especie, raca, sexo, nascimento, created_at FROM pacientes" if tem_created_p else "SELECT id, tutor_id, nome, especie, raca, sexo, nascimento FROM pacientes")
+                                cur_b.execute(sel_p)
                                 for row in cur_b.fetchall():
-                                    novo_tutor_id = map_tutor.get(int(row["tutor_id"]))
+                                    row = dict(row)
+                                    novo_tutor_id = map_tutor.get(int(row["tutor_id"])) if row.get("tutor_id") is not None else None
                                     if novo_tutor_id is None:
                                         continue
-                                    especie_val = row["especie"] or ""
+                                    especie_val = row.get("especie") or ""
+                                    nome_key_p = (row.get("nome_key") or "").strip() if tem_nome_key_p else _norm_key(row.get("nome") or "")
+                                    if not nome_key_p:
+                                        nome_key_p = _norm_key(row.get("nome") or "") or "sem_nome"
                                     r = cur_l.execute(
                                         "SELECT id FROM pacientes WHERE tutor_id=? AND nome_key=? AND especie=?",
-                                        (novo_tutor_id, row["nome_key"], especie_val),
+                                        (novo_tutor_id, nome_key_p, especie_val),
                                     ).fetchone()
                                     if r:
                                         novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
@@ -10234,13 +10261,13 @@ elif menu_principal == "⚙️ Configurações":
                                                VALUES (?,?,?,?,?,?,?,?)""",
                                             (
                                                 novo_tutor_id,
-                                                row["nome"],
-                                                row["nome_key"],
+                                                row.get("nome") or "",
+                                                nome_key_p,
                                                 especie_val,
-                                                row["raca"],
-                                                row["sexo"],
-                                                row["nascimento"],
-                                                row["created_at"] or datetime.now().isoformat(),
+                                                row.get("raca"),
+                                                row.get("sexo"),
+                                                row.get("nascimento"),
+                                                row.get("created_at") if tem_created_p else datetime.now().isoformat(),
                                             ),
                                         )
                                         novo_id = cur_l.lastrowid
