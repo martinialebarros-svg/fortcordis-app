@@ -101,6 +101,16 @@ O sistema importa: clínicas, tutores, pacientes, laudos (ecocardiograma, eletro
 
 **Nota:** O script `exportar_backup.py` deve estar na pasta do projeto e o `fortcordis.db` local deve ser o que tinha os cadastros e laudos. Pode incluir `exportar_backup.py` no repositório para uso local.
 
+### 1.7 Onde ficam os arquivos de laudo (JSON, PDF, imagens)?
+
+- **No seu computador:** o sistema espera a pasta de laudos em **`FortCordis\Laudos`** na sua pasta de usuário (ex.: `C:\Users\SEU_USUARIO\FortCordis\Laudos`). Se você usa a pasta do projeto, pode ser **`FortCordis_Novo\Laudos`** (ex.: `C:\Users\marti\Desktop\FortCordis_Novo\Laudos`). Nessa pasta ficam os arquivos `.json`, `.pdf` e imagens (ex.: `*_IMG_01.jpg`) de cada exame. O backup `.db` **não** inclui esses arquivos — só os registros do banco (datas, paciente, clínica, conclusão, etc.).
+
+- **No sistema online (Streamlit Cloud):** não existe pasta persistente para esses arquivos. Além disso, o **banco guarda o caminho do seu PC** para localizar cada PDF/JSON (ex.: `C:\Users\...\FortCordis_Novo\Laudos\2026-01-29_Jully_Larissa_PET_MIX.pdf`). Quando você importa o backup online, esses caminhos são copiados — mas no servidor Linux esse caminho não existe, então o app **não consegue achar os arquivos** mesmo que eles existissem lá. O disco do app é **efêmero**: qualquer pasta (ex.: `/home/appuser/FortCordis/Laudos`) é recriada vazia a cada deploy. Por isso:
+  - **O que vai para o online:** apenas o que está no `.db` (clínicas, tutores, pacientes, laudos com data, tipo, conclusão, etc.). Em **Buscar exames** você vê a lista de exames importados (data, clínica, animal, tutor, tipo).
+  - **O que fica só no seu PC:** os arquivos reais — JSON, PDF e imagens dos laudos — continuam na sua pasta local (ex.: `FortCordis_Novo\Laudos`). Para abrir ou enviar um PDF/JSON, use essa pasta no seu computador.
+
+- **Se no futuro quiser os PDFs/JSON também online:** seria preciso usar armazenamento em nuvem (ex.: AWS S3, Google Cloud Storage, ou anexos em banco) e alterar o app para gravar e ler dali. Hoje o desenho é: **online = metadados (banco); arquivos = no seu PC.**
+
 ---
 
 ## 2. Integração com Google Calendar (próxima etapa)

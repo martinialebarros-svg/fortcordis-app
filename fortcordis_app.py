@@ -6744,7 +6744,11 @@ elif menu_principal == "🩺 Laudos e Exames":
             df_banco = pd.DataFrame(laudos_banco)
             df_banco["data"] = df_banco["data"].astype(str)
             st.dataframe(df_banco[["data", "clinica", "animal", "tutor", "tipo_exame"]], use_container_width=True, hide_index=True)
-            st.caption(f"Total: {len(laudos_banco)} exame(s). PDF/JSON desses exames estavam no computador local; aqui só os dados do banco.")
+            st.caption(
+                f"Total: {len(laudos_banco)} exame(s). "
+                "O banco guarda o **caminho** do seu computador (ex.: C:\\...\\Laudos\\arquivo.pdf) para localizar PDF/JSON. "
+                "No sistema online esse caminho não existe — os arquivos ficam só no seu PC; aqui você vê só os dados (data, clínica, animal, tutor, tipo)."
+            )
         else:
             st.info("Nenhum exame no banco com esses filtros. Use a **Busca livre** acima (ex.: nome do pet) para buscar em tutor, clínica e pet ao mesmo tempo. Se importou backup, confira se o .db continha laudos (ecocardiograma, eletro, pressão).")
 
