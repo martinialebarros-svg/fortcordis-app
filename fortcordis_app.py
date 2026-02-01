@@ -3907,10 +3907,11 @@ for pasta in [PASTA_LAUDOS, PASTA_PRESCRICOES, PASTA_DOCUMENTOS]:
 # CONTROLE DE ACESSO
 # ============================================================================
 
-# Se não estiver logado, mostra tela de login
+# Se não estiver logado, mostra tela de login (ou cria primeiro usuário e entra)
 if not st.session_state.get("autenticado"):
     mostrar_tela_login()
-    st.stop()
+    if not st.session_state.get("autenticado"):
+        st.stop()
 
 # Se chegou aqui, está logado!
 # Mostra info do usuário na sidebar
@@ -9537,7 +9538,7 @@ elif menu_principal == "⚙️ Configurações":
                             # Cria usuário
                             from auth import criar_usuario
                             
-                            sucesso, mensagem = criar_usuario(
+                            sucesso, mensagem, _, _ = criar_usuario(
                                 nome=novo_user_nome,
                                 email=novo_user_email,
                                 senha=novo_user_senha,
@@ -9921,23 +9922,40 @@ elif menu_principal == "⚙️ Configurações":
         # ABA 3: CONFIGURAÇÕES GERAIS (mantém o que já tinha)
         # ============================================================================
         with tab_sistema:
-            st.subheader("⚙️ Configurações do Sistema")
+            st.subheader("⚙️ Configurações Gerais")
+            st.caption("Altere sua senha e, em breve, outros dados do sistema.")
             
-            # Aqui você coloca o código que já tinha nas configurações
-            # Por exemplo: dados profissionais, backup, etc.
+            # Alterar minha senha
+            with st.expander("🔑 Alterar minha senha", expanded=True):
+                with st.form("form_alterar_senha", clear_on_submit=True):
+                    senha_atual = st.text_input("Senha atual", type="password", key="config_senha_atual", placeholder="Digite sua senha atual")
+                    nova_senha = st.text_input("Nova senha (mínimo 8 caracteres)", type="password", key="config_nova_senha", placeholder="Mínimo 8 caracteres")
+                    nova_senha2 = st.text_input("Confirmar nova senha", type="password", key="config_nova_senha2", placeholder="Repita a nova senha")
+                    if st.form_submit_button("Alterar senha"):
+                        if not senha_atual or not nova_senha or not nova_senha2:
+                            st.error("Preencha todos os campos.")
+                        elif len(nova_senha) < 8:
+                            st.error("A nova senha deve ter no mínimo 8 caracteres.")
+                        elif nova_senha != nova_senha2:
+                            st.error("A nova senha e a confirmação não coincidem.")
+                        else:
+                            try:
+                                from auth import atualizar_senha
+                                ok, msg = atualizar_senha(
+                                    st.session_state.get("usuario_id"),
+                                    senha_atual,
+                                    nova_senha,
+                                )
+                                if ok:
+                                    st.success(msg)
+                                else:
+                                    st.error(msg)
+                            except Exception as e:
+                                st.error(f"Erro ao alterar senha: {e}")
             
-            st.info("💡 Suas configurações originais vão aqui")
-            
-            st.info("""
-            ### Configurações disponíveis:
-            
-            - 👨‍⚕️ Dados profissionais (nome, CRMV)
-            - 📊 Valores de referência (do seu sistema atual)
-            - 📝 Frases personalizadas (do seu sistema atual)
-            - 🎁 Descontos por clínica
-            
-            **Em breve:** Interface completa de configurações
-            """)
+            st.markdown("---")
+            st.markdown("#### Outras configurações (em breve)")
+            st.markdown("- 👨‍⚕️ Dados profissionais (nome, CRMV)  \n- 📊 Valores de referência  \n- 📝 Frases personalizadas  \n- 🎁 Descontos por clínica")
 
         # ============================================================================
         # ABA: IMPORTAR DADOS (backup local após deploy)
