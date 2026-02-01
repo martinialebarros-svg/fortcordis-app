@@ -1,0 +1,16 @@
+# Comandos para commit e push (Fort Cordis)
+
+Abra o terminal na pasta do projeto (FortCordis_Novo) e execute:
+
+1) Adicionar o arquivo ao Git:
+   git add fortcordis_app.py
+
+2) Criar o commit:
+   git commit -m "Importar backup: preencher nomes nos laudos, deduplicar exibição, limpar laudos antes de importar"
+
+3) Enviar para o GitHub:
+   git push origin main
+
+---
+Tudo em uma linha (PowerShell):
+git add fortcordis_app.py; git commit -m "Importar backup: preencher nomes nos laudos, deduplicar exibição, limpar laudos antes de importar"; git push origin main
