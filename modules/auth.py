@@ -163,52 +163,42 @@ def criar_usuario(
     senha: str,
     papel: str = "veterinario",
     criado_por: Optional[int] = None
-) -> Tuple[bool, str]:
+) -> Tuple[bool, str, Optional[int], Optional[str]]:
     """
     Cria um novo usuário no sistema.
-    
-    Args:
-        nome: Nome completo do usuário
-        email: Email (usado para login)
-        senha: Senha em texto plano (será hasheada)
-        papel: Nome do papel a atribuir
-        criado_por: ID do usuário que está criando (para auditoria)
-        
+
     Returns:
-        (sucesso, mensagem)
+        (sucesso, mensagem, usuario_id ou None, nome ou None)
     """
     # Validações
     if len(senha) < 8:
-        return False, "❌ Senha deve ter no mínimo 8 caracteres"
-    
+        return False, "❌ Senha deve ter no mínimo 8 caracteres", None, None
+
     if not "@" in email:
-        return False, "❌ Email inválido"
-    
+        return False, "❌ Email inválido", None, None
+
     conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
-    
+
     try:
-        # Verifica se papel existe
         cursor.execute("SELECT id FROM papeis WHERE nome = ?", (papel,))
         papel_row = cursor.fetchone()
         if not papel_row:
-            return False, f"❌ Papel '{papel}' não existe"
+            return False, f"❌ Papel '{papel}' não existe", None, None
         papel_id = papel_row[0]
-        
-        # Cria hash da senha
+
         senha_hash = hash_senha(senha)
-        
-        # Insere usuário
+        email_lower = email.strip().lower()
+
         cursor.execute(
             """
             INSERT INTO usuarios (nome, email, senha_hash, criado_por)
             VALUES (?, ?, ?, ?)
             """,
-            (nome, email.lower(), senha_hash, criado_por)
+            (nome.strip(), email_lower, senha_hash, criado_por)
         )
         usuario_id = cursor.lastrowid
-        
-        # Atribui papel
+
         cursor.execute(
             """
             INSERT INTO usuario_papel (usuario_id, papel_id, atribuido_por)
@@ -216,14 +206,14 @@ def criar_usuario(
             """,
             (usuario_id, papel_id, criado_por)
         )
-        
+
         conn.commit()
-        return True, f"✅ Usuário '{nome}' criado com sucesso!"
-        
+        return True, f"✅ Usuário '{nome}' criado com sucesso!", usuario_id, nome.strip()
+
     except sqlite3.IntegrityError:
-        return False, f"❌ Email '{email}' já está cadastrado"
+        return False, f"❌ Email '{email}' já está cadastrado", None, None
     except Exception as e:
-        return False, f"❌ Erro ao criar usuário: {e}"
+        return False, f"❌ Erro ao criar usuário: {e}", None, None
     finally:
         conn.close()
 
@@ -548,7 +538,7 @@ def criar_usuario_admin_inicial():
     conn.close()
     
     # Cria admin
-    sucesso, msg = criar_usuario(
+    sucesso, msg, _, _ = criar_usuario(
         nome="Administrador",
         email="admin@fortcordis.com",
         senha="Admin@2026",
@@ -942,30 +932,21 @@ def mostrar_tela_login():
                     st.error("As senhas não coincidem.")
                 else:
                     email_limpo = email.strip().lower()
-                    ok, msg = criar_usuario(nome=nome.strip(), email=email_limpo, senha=senha, papel="admin")
-                    if ok:
-                        # Login automático após criar conta (evita voltar pra tela de login)
+                    ok, msg, usuario_id, nome_user = criar_usuario(nome=nome.strip(), email=email_limpo, senha=senha, papel="admin")
+                    if ok and usuario_id is not None:
+                        # Login automático na mesma execução (sem st.rerun = session_state não se perde no deploy)
                         try:
-                            conn = sqlite3.connect(str(DB_PATH))
-                            cur = conn.cursor()
-                            cur.execute("SELECT id, nome FROM usuarios WHERE email = ? AND ativo = 1", (email_limpo,))
-                            row = cur.fetchone()
-                            conn.close()
-                            if row:
-                                usuario_id, nome_user = row
-                                try:
-                                    perms = carregar_permissoes_usuario(usuario_id)
-                                except Exception:
-                                    perms = []
-                                st.session_state["autenticado"] = True
-                                st.session_state["usuario_id"] = usuario_id
-                                st.session_state["usuario_nome"] = nome_user
-                                st.session_state["usuario_email"] = email_limpo
-                                st.session_state["permissoes"] = perms
-                                st.success("✅ Conta criada! Entrando no sistema...")
-                                st.rerun()
+                            perms = carregar_permissoes_usuario(usuario_id)
                         except Exception:
-                            pass
+                            perms = []
+                        st.session_state["autenticado"] = True
+                        st.session_state["usuario_id"] = usuario_id
+                        st.session_state["usuario_nome"] = nome_user or nome.strip()
+                        st.session_state["usuario_email"] = email_limpo
+                        st.session_state["permissoes"] = perms
+                        st.success("✅ Conta criada! Entrando no sistema...")
+                        return True  # Entra direto, sem rerun (evita perder session em outro worker)
+                    elif ok:
                         st.success(msg + " Faça login abaixo.")
                         st.rerun()
                     else:
