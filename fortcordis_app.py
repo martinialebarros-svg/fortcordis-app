@@ -10248,16 +10248,20 @@ elif menu_principal == "⚙️ Configurações":
                                             map_clinica_parceiras[int(old_id)] = novo_id
                             except sqlite3.OperationalError:
                                 pass
-                            # 5) Laudos (mapear paciente_id e clinica_id)
+                            # 5) Laudos (mapear paciente_id e clinica_id; só inserir colunas que existem no destino)
                             for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
                                 try:
+                                    cur_l.execute(f"PRAGMA table_info({tabela})")
+                                    colunas_destino = [c[1] for c in cur_l.fetchall()]
                                     cur_b.execute(f"SELECT * FROM {tabela}")
                                     rows_laudo = cur_b.fetchall()
                                     if not rows_laudo:
                                         continue
                                     cur_b.execute(f"PRAGMA table_info({tabela})")
                                     colunas_laudo = [c[1] for c in cur_b.fetchall()]
-                                    colunas_sem_id = [c for c in colunas_laudo if c != "id"]
+                                    colunas_sem_id = [c for c in colunas_laudo if c != "id" and c in colunas_destino]
+                                    if not colunas_sem_id:
+                                        continue
                                     for row in rows_laudo:
                                         row_d = dict(zip(colunas_laudo, row))
                                         novo_paciente_id = map_paciente.get(int(row_d["paciente_id"])) if row_d.get("paciente_id") else None
@@ -10265,13 +10269,21 @@ elif menu_principal == "⚙️ Configurações":
                                         novo_clinica_id = (map_clinica.get(old_clinica_id) or map_clinica_parceiras.get(old_clinica_id)) if old_clinica_id is not None else None
                                         row_d["paciente_id"] = novo_paciente_id
                                         row_d["clinica_id"] = novo_clinica_id
-                                        vals = [row_d.get(c) for c in colunas_sem_id]
+                                        vals = []
+                                        for c in colunas_sem_id:
+                                            if c == "arquivo_xml":
+                                                vals.append(row_d.get("arquivo_xml") or row_d.get("arquivo_json"))
+                                            else:
+                                                vals.append(row_d.get(c))
                                         placeholders = ", ".join(["?" for _ in colunas_sem_id])
-                                        cur_l.execute(
-                                            f"INSERT INTO {tabela} ({', '.join(colunas_sem_id)}) VALUES ({placeholders})",
-                                            vals,
-                                        )
-                                        total_l += 1
+                                        try:
+                                            cur_l.execute(
+                                                f"INSERT INTO {tabela} ({', '.join(colunas_sem_id)}) VALUES ({placeholders})",
+                                                vals,
+                                            )
+                                            total_l += 1
+                                        except sqlite3.OperationalError:
+                                            pass
                                 except sqlite3.OperationalError:
                                     pass
                             conn_local.commit()
