@@ -1691,8 +1691,9 @@ def listar_registros_arquivados_cached(pasta_str: str):
     return registros
 
 
-def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro=None):
-    """Lista exames (laudos) do banco com tutor e clínica (JOIN). Para busca por tutor, clínica ou pet após importação."""
+def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro=None, busca_livre=None):
+    """Lista exames (laudos) do banco com tutor e clínica (JOIN). Para busca por tutor, clínica ou pet após importação.
+    busca_livre: se preenchido, busca o termo em animal, tutor e clínica ao mesmo tempo (OR)."""
     try:
         conn = sqlite3.connect(str(DB_PATH))
         conn.row_factory = sqlite3.Row
@@ -1732,8 +1733,19 @@ def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro
                     params.append(f"%{clinica_filtro.strip()}%")
                     params.append(f"%{clinica_filtro.strip()}%")
                 if animal_filtro and str(animal_filtro).strip():
-                    query += " AND UPPER(COALESCE(l.nome_paciente, '')) LIKE UPPER(?)"
+                    query += " AND UPPER(COALESCE(NULLIF(TRIM(l.nome_paciente), ''), p.nome, '')) LIKE UPPER(?)"
                     params.append(f"%{animal_filtro.strip()}%")
+                if busca_livre and str(busca_livre).strip():
+                    termo = f"%{busca_livre.strip()}%"
+                    # Busca em animal (laudo ou paciente), tutor, clínica (e fallbacks nome_clinica/nome_tutor se existirem)
+                    parte_clinica = "COALESCE(c.nome, cp.nome, l.nome_clinica, '')" if "nome_clinica" in cols else "COALESCE(c.nome, cp.nome, '')"
+                    parte_tutor = "COALESCE(t.nome, l.nome_tutor, '')" if "nome_tutor" in cols else "COALESCE(t.nome, '')"
+                    query += f""" AND (
+                        UPPER(COALESCE(NULLIF(TRIM(l.nome_paciente), ''), p.nome, '')) LIKE UPPER(?)
+                        OR UPPER({parte_tutor}) LIKE UPPER(?)
+                        OR UPPER({parte_clinica}) LIKE UPPER(?)
+                    )"""
+                    params.extend([termo, termo, termo])
                 query += " ORDER BY l.data_exame DESC, l.id DESC"
                 cur.execute(query, params)
                 for row in cur.fetchall():
@@ -6712,14 +6724,20 @@ elif menu_principal == "🩺 Laudos e Exames":
         lb_tutor = st.text_input("Tutor (contém)", key="busca_exame_tutor_db", placeholder="Nome do tutor")
         lb_clinica = st.text_input("Clínica (contém)", key="busca_exame_clinica_db", placeholder="Nome da clínica")
         lb_animal = st.text_input("Animal / pet (contém)", key="busca_exame_animal_db", placeholder="Nome do animal")
-        laudos_banco = listar_laudos_do_banco(tutor_filtro=lb_tutor or None, clinica_filtro=lb_clinica or None, animal_filtro=lb_animal or None)
+        lb_livre = st.text_input("🔍 Busca livre (tutor, clínica ou pet)", key="busca_exame_livre_db", placeholder="Ex.: Pipoca — busca em todos os campos acima")
+        laudos_banco = listar_laudos_do_banco(
+            tutor_filtro=lb_tutor or None,
+            clinica_filtro=lb_clinica or None,
+            animal_filtro=lb_animal or None,
+            busca_livre=lb_livre or None,
+        )
         if laudos_banco:
             df_banco = pd.DataFrame(laudos_banco)
             df_banco["data"] = df_banco["data"].astype(str)
             st.dataframe(df_banco[["data", "clinica", "animal", "tutor", "tipo_exame"]], use_container_width=True, hide_index=True)
             st.caption(f"Total: {len(laudos_banco)} exame(s). PDF/JSON desses exames estavam no computador local; aqui só os dados do banco.")
         else:
-            st.info("Nenhum exame no banco com esses filtros. Se você importou um backup, confira se o arquivo .db continha laudos (ecocardiograma, eletro, pressão).")
+            st.info("Nenhum exame no banco com esses filtros. Use a **Busca livre** acima (ex.: nome do pet) para buscar em tutor, clínica e pet ao mesmo tempo. Se importou backup, confira se o .db continha laudos (ecocardiograma, eletro, pressão).")
 
         st.markdown("---")
         st.subheader("📁 Exames na pasta (arquivos JSON/PDF)")
