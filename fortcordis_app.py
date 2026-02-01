@@ -104,10 +104,11 @@ def _criar_tabelas_laudos_se_nao_existirem(cursor):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 paciente_id INTEGER, data_exame TEXT, clinica_id INTEGER, veterinario_id INTEGER,
                 tipo_exame TEXT DEFAULT 'ecocardiograma',
-                nome_paciente TEXT, especie TEXT, raca TEXT, idade TEXT, peso REAL,
+                nome_paciente TEXT, nome_clinica TEXT, nome_tutor TEXT,
+                especie TEXT, raca TEXT, idade TEXT, peso REAL, peso_kg REAL,
                 modo_m TEXT, modo_bidimensional TEXT, doppler TEXT, conclusao TEXT, observacoes TEXT,
                 achados_normais TEXT, achados_alterados TEXT,
-                arquivo_xml TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
+                arquivo_xml TEXT, arquivo_json TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
                 data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, criado_por INTEGER
             )
         """),
@@ -116,9 +117,10 @@ def _criar_tabelas_laudos_se_nao_existirem(cursor):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 paciente_id INTEGER, data_exame TEXT, clinica_id INTEGER, veterinario_id INTEGER,
                 tipo_exame TEXT DEFAULT 'eletrocardiograma',
-                nome_paciente TEXT, especie TEXT, raca TEXT, idade TEXT, peso REAL,
+                nome_paciente TEXT, nome_clinica TEXT, nome_tutor TEXT,
+                especie TEXT, raca TEXT, idade TEXT, peso REAL, peso_kg REAL,
                 ritmo TEXT, frequencia_cardiaca INTEGER, conclusao TEXT, observacoes TEXT,
-                arquivo_xml TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
+                arquivo_xml TEXT, arquivo_json TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
                 data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, criado_por INTEGER
             )
         """),
@@ -127,14 +129,76 @@ def _criar_tabelas_laudos_se_nao_existirem(cursor):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 paciente_id INTEGER, data_exame TEXT, clinica_id INTEGER, veterinario_id INTEGER,
                 tipo_exame TEXT DEFAULT 'pressao_arterial',
-                nome_paciente TEXT, especie TEXT, raca TEXT, idade TEXT, peso REAL,
+                nome_paciente TEXT, nome_clinica TEXT, nome_tutor TEXT,
+                especie TEXT, raca TEXT, idade TEXT, peso REAL, peso_kg REAL,
                 pressao_sistolica INTEGER, pressao_diastolica INTEGER, conclusao TEXT, observacoes TEXT,
-                arquivo_xml TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
+                arquivo_xml TEXT, arquivo_json TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
                 data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, criado_por INTEGER
             )
         """),
     ]:
         cursor.execute(sql)
+    # Garantir colunas extras em tabelas já existentes (migrações)
+    for _tab in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+        for _col, _tipo in [("nome_clinica", "TEXT"), ("nome_tutor", "TEXT"), ("arquivo_json", "TEXT"), ("peso_kg", "REAL")]:
+            try:
+                cursor.execute(f"ALTER TABLE {_tab} ADD COLUMN {_col} {_tipo}")
+            except sqlite3.OperationalError:
+                pass
+
+
+def _migrar_nomes_laudos_do_arquivo(cursor):
+    """Preenche nome_paciente, nome_clinica e nome_tutor vazios a partir do nome do arquivo JSON/XML.
+    O padrão do nome é: data__animal__tutor__clinica.json"""
+    import re
+    for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+        try:
+            cursor.execute(f"PRAGMA table_info({tabela})")
+            cols = [r[1] for r in cursor.fetchall()]
+            col_arq = "arquivo_json" if "arquivo_json" in cols else "arquivo_xml"
+            tem_clinica = "nome_clinica" in cols
+            tem_tutor = "nome_tutor" in cols
+            # Selecionar laudos onde algum nome está vazio mas o arquivo tem o padrão com __
+            cursor.execute(f"""SELECT id, {col_arq}, nome_paciente,
+                {'nome_clinica' if tem_clinica else "'' AS nome_clinica"},
+                {'nome_tutor' if tem_tutor else "'' AS nome_tutor"}
+                FROM {tabela}
+                WHERE {col_arq} IS NOT NULL AND {col_arq} LIKE '%__%__%__%'
+                AND (
+                    COALESCE(TRIM(nome_paciente), '') = ''
+                    {" OR COALESCE(TRIM(nome_clinica), '') = ''" if tem_clinica else ''}
+                    {" OR COALESCE(TRIM(nome_tutor), '') = ''" if tem_tutor else ''}
+                )""")
+            for row in cursor.fetchall():
+                rid, arq, np, nc, nt = row
+                if not arq:
+                    continue
+                # Extrair nome base do arquivo (sem extensão e sem path)
+                base = arq.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+                base = re.sub(r'\.(json|xml|pdf)$', '', base, flags=re.IGNORECASE)
+                partes = base.split("__")
+                if len(partes) < 4:
+                    continue
+                # partes[0] = data, partes[1] = animal, partes[2] = tutor, partes[3] = clinica
+                animal_arq = partes[1].replace("_", " ").strip()
+                tutor_arq = partes[2].replace("_", " ").strip()
+                clinica_arq = partes[3].replace("_", " ").strip()
+                updates = []
+                params = []
+                if not (np or "").strip() and animal_arq:
+                    updates.append("nome_paciente = ?")
+                    params.append(animal_arq)
+                if tem_clinica and not (nc or "").strip() and clinica_arq:
+                    updates.append("nome_clinica = ?")
+                    params.append(clinica_arq)
+                if tem_tutor and not (nt or "").strip() and tutor_arq:
+                    updates.append("nome_tutor = ?")
+                    params.append(tutor_arq)
+                if updates:
+                    params.append(rid)
+                    cursor.execute(f"UPDATE {tabela} SET {', '.join(updates)} WHERE id = ?", params)
+        except sqlite3.OperationalError:
+            pass
 
 
 def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
@@ -162,40 +226,57 @@ def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
         cursor.execute(f"PRAGMA table_info({tabela})")
         colunas_existentes = [col[1] for col in cursor.fetchall()]
         
+        # Extrair dados do paciente (podem estar aninhados em "paciente" ou no nível superior)
+        pac = dados_laudo.get('paciente', {}) if isinstance(dados_laudo.get('paciente'), dict) else {}
+        nome_animal = pac.get('nome', '') or dados_laudo.get('nome_animal', '')
+        especie_val = pac.get('especie', '') or dados_laudo.get('especie', '')
+        raca_val = pac.get('raca', '') or dados_laudo.get('raca', '')
+        idade_val = pac.get('idade', '') or dados_laudo.get('idade', '')
+        peso_raw = pac.get('peso', 0) or dados_laudo.get('peso', 0)
+        data_val = pac.get('data_exame', '') or dados_laudo.get('data', datetime.now().strftime('%Y-%m-%d'))
+        clinica_nome = pac.get('clinica', '') or dados_laudo.get('clinica', '')
+        tutor_nome = pac.get('tutor', '') or dados_laudo.get('tutor', '')
+        textos = dados_laudo.get('textos', {}) if isinstance(dados_laudo.get('textos'), dict) else {}
+        conclusao_val = textos.get('conclusao', '') or dados_laudo.get('conclusao', '')
+
         # Mapeamento completo baseado na estrutura real
         dados_possiveis = {
             # Paciente
-            'nome_paciente': dados_laudo.get('nome_animal', ''),
-            'especie': dados_laudo.get('especie', ''),
-            'raca': dados_laudo.get('raca', ''),
-            'idade': dados_laudo.get('idade', ''),
-            'peso': float(dados_laudo.get('peso', 0)) if dados_laudo.get('peso') else None,
-            
+            'nome_paciente': nome_animal,
+            'nome_clinica': clinica_nome,
+            'nome_tutor': tutor_nome,
+            'especie': especie_val,
+            'raca': raca_val,
+            'idade': idade_val,
+            'peso': float(peso_raw) if peso_raw else None,
+            'peso_kg': float(peso_raw) if peso_raw else None,
+
             # Data e tipo
-            'data_exame': dados_laudo.get('data', datetime.now().strftime('%Y-%m-%d')),
+            'data_exame': data_val,
             'tipo_exame': tipo_exame,
-            
-            # IDs (deixa NULL por enquanto, você pode preencher depois)
+
+            # IDs (deixa NULL por enquanto)
             'paciente_id': None,
             'clinica_id': None,
             'veterinario_id': None,
             'criado_por': None,
-            
+
             # Achados (específico de eco)
             'modo_m': dados_laudo.get('modo_m', ''),
             'modo_bidimensional': dados_laudo.get('modo_2d', ''),
             'doppler': dados_laudo.get('doppler', ''),
             'achados_normais': dados_laudo.get('achados_normais', ''),
             'achados_alterados': dados_laudo.get('achados_alterados', ''),
-            
+
             # Conclusão
-            'conclusao': dados_laudo.get('conclusao', ''),
+            'conclusao': conclusao_val,
             'observacoes': dados_laudo.get('observacoes', ''),
-            
+
             # Arquivos
-            'arquivo_xml': str(caminho_json),  # Usa JSON no lugar do XML
+            'arquivo_xml': str(caminho_json),
+            'arquivo_json': str(caminho_json),
             'arquivo_pdf': str(caminho_pdf),
-            
+
             # Status
             'status': 'finalizado'
         }
@@ -712,6 +793,10 @@ def _db_init():
             conn.execute(f"ALTER TABLE tutores ADD COLUMN {col} {tipo}")
         except sqlite3.OperationalError:
             pass
+    # Criar tabelas de laudos e garantir colunas extras
+    _criar_tabelas_laudos_se_nao_existirem(conn)
+    # Migração: preencher nomes vazios a partir do padrão do nome de arquivo
+    _migrar_nomes_laudos_do_arquivo(conn)
     conn.commit()
 
 def db_upsert_clinica(nome: str):
@@ -5547,37 +5632,53 @@ elif menu_principal == "📋 Prontuário":
         try:
             conn = sqlite3.connect(str(_db))
             cursor = conn.cursor()
-            
+            _criar_tabelas_laudos_se_nao_existirem(cursor)
+            conn.commit()
+
             tabelas = {
                 "ecocardiograma": "laudos_ecocardiograma",
                 "eletrocardiograma": "laudos_eletrocardiograma",
                 "pressao_arterial": "laudos_pressao_arterial"
             }
-            
+
             tabela = tabelas.get(tipo_exame.lower())
-            
+
             if not tabela:
                 return None, f"Tipo inválido: {tipo_exame}"
-            
+
+            # Extrair dados do paciente (podem estar no nível superior ou aninhados em "paciente")
+            pac = dados_laudo.get('paciente', {}) if isinstance(dados_laudo.get('paciente'), dict) else {}
+            nome_animal = pac.get('nome', '') or dados_laudo.get('nome_animal', '')
+            especie = pac.get('especie', '') or dados_laudo.get('especie', '')
+            raca = pac.get('raca', '') or dados_laudo.get('raca', '')
+            idade = pac.get('idade', '') or dados_laudo.get('idade', '')
+            peso_raw = pac.get('peso', 0) or dados_laudo.get('peso', 0)
+            data_exame = pac.get('data_exame', '') or dados_laudo.get('data', datetime.now().strftime('%Y-%m-%d'))
+            clinica_nome = pac.get('clinica', '') or dados_laudo.get('clinica', '')
+            tutor_nome = pac.get('tutor', '') or dados_laudo.get('tutor', '')
+            conclusao = dados_laudo.get('textos', {}).get('conclusao', '') if isinstance(dados_laudo.get('textos'), dict) else dados_laudo.get('conclusao', '')
+            observacoes = dados_laudo.get('observacoes', '')
+
             # Dados comuns
             cursor.execute(f"""
                 INSERT INTO {tabela} (
                     nome_paciente, especie, raca, idade, peso_kg,
-                    data_exame, nome_clinica,
+                    data_exame, nome_clinica, nome_tutor,
                     conclusao, observacoes,
                     arquivo_json, arquivo_pdf,
                     status, data_criacao
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
-                dados_laudo.get('nome_animal', ''),
-                dados_laudo.get('especie', ''),
-                dados_laudo.get('raca', ''),
-                dados_laudo.get('idade', ''),
-                float(dados_laudo.get('peso', 0)),
-                dados_laudo.get('data', datetime.now().strftime('%Y-%m-%d')),
-                dados_laudo.get('clinica', ''),
-                dados_laudo.get('conclusao', ''),
-                dados_laudo.get('observacoes', ''),
+                nome_animal,
+                especie,
+                raca,
+                idade,
+                float(peso_raw) if peso_raw else None,
+                data_exame,
+                clinica_nome,
+                tutor_nome,
+                conclusao,
+                observacoes,
                 str(caminho_json),
                 str(caminho_pdf),
                 'finalizado'
