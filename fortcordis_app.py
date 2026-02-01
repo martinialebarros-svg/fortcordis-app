@@ -10529,6 +10529,12 @@ elif menu_principal == "⚙️ Configurações":
                             )
                             if erros_import:
                                 st.error("Alguns passos falharam: " + " | ".join(f"{k}: {v}" for k, v in erros_import))
+                            if (n_p_b > 0 and total_p == 0) or (n_cp_b > 0 and total_cp == 0):
+                                st.warning(
+                                    "Pacientes ou clínicas parceiras: nenhum *novo* inserido (podem já existir no banco). "
+                                    "Os **nomes** (clínica, animal, tutor) nos laudos são preenchidos a partir do backup durante a importação. "
+                                    "Se na aba «Buscar exames» continuarem vazios, confira se há erros acima e tente gerar um novo backup com exportar_backup.py e reimportar."
+                                )
                             if n_l_b > 0 and total_l == 0:
                                 st.warning(
                                     "O backup tinha laudos mas nenhum foi inserido. "
