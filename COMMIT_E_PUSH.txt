@@ -1,16 +1,22 @@
 # Comandos para commit e push (Fort Cordis)
 
-Abra o terminal na pasta do projeto (FortCordis_Novo) e execute:
+## Como garantir que o app no Streamlit está com a versão mais recente
 
-1) Adicionar o arquivo ao Git:
+1. **Antes do push:** No fortcordis_app.py, na linha ~21, atualize a data:
+   VERSAO_DEPLOY = "2026-02-01"  →  use a data de hoje (ex.: "2026-02-02")
+
+2. **Commit e push:**
    git add fortcordis_app.py
-
-2) Criar o commit:
-   git commit -m "Importar backup: preencher nomes nos laudos, deduplicar exibição, limpar laudos antes de importar"
-
-3) Enviar para o GitHub:
+   git commit -m "Sua mensagem (ex.: correção importação nomes na tabela)"
    git push origin main
+
+3. **Streamlit Cloud:** Ao fazer push na branch main, o Streamlit redeploya sozinho (leva 1–3 min).
+   Se não redeployar: abra https://share.streamlit.io → seu app → "Reboot app" ou "Redeploy".
+
+4. **Conferir a versão:** Abra o app no navegador. Na **sidebar** (menu à esquerda), no rodapé, deve aparecer:
+   "Deploy: 2026-02-02" (a data que você colocou).
+   Se aparecer a data antiga, o app ainda não está na versão nova — espere mais um pouco ou force o redeploy.
 
 ---
 Tudo em uma linha (PowerShell):
-git add fortcordis_app.py; git commit -m "Importar backup: preencher nomes nos laudos, deduplicar exibição, limpar laudos antes de importar"; git push origin main
+git add fortcordis_app.py; git commit -m "Correção: nomes clínica/animal/tutor na tabela de exames"; git push origin main
