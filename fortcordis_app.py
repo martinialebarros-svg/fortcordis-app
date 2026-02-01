@@ -1706,7 +1706,9 @@ def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro
                 col_arquivo = "arquivo_json" if "arquivo_json" in cols else "arquivo_xml"
                 query = f"""
                     SELECT
-                        l.id, l.tipo_exame, l.nome_paciente AS animal, l.data_exame AS data,
+                        l.id, l.tipo_exame,
+                        COALESCE(l.nome_paciente, p.nome, '') AS animal,
+                        l.data_exame AS data,
                         COALESCE(c.nome, cp.nome, '') AS clinica,
                         COALESCE(t.nome, '') AS tutor,
                         l.{col_arquivo} AS arquivo_json,
@@ -10117,6 +10119,7 @@ elif menu_principal == "⚙️ Configurações":
                             _criar_tabelas_laudos_se_nao_existirem(cur_l)
                             conn_local.commit()
                             map_clinica = {}
+                            map_clinica_parceiras = {}
                             map_tutor = {}
                             map_paciente = {}
                             total_c, total_t, total_p, total_l, total_cp = 0, 0, 0, 0, 0
@@ -10188,7 +10191,7 @@ elif menu_principal == "⚙️ Configurações":
                                     map_paciente[int(row["id"])] = novo_id
                             except sqlite3.OperationalError:
                                 pass
-                            # 4) Clinicas parceiras (INSERT OR IGNORE por nome)
+                            # 4) Clinicas parceiras (INSERT OR IGNORE por nome; mapear id para laudos)
                             try:
                                 cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='clinicas_parceiras'")
                                 if cur_b.fetchone():
@@ -10197,11 +10200,13 @@ elif menu_principal == "⚙️ Configurações":
                                     cur_b.execute("SELECT * FROM clinicas_parceiras")
                                     for row in cur_b.fetchall():
                                         row_dict = dict(zip(cols_cp, row))
+                                        old_id = row_dict.get("id")
+                                        nome_cp = row_dict.get("nome")
                                         cur_l.execute(
                                             """INSERT OR IGNORE INTO clinicas_parceiras (nome, endereco, bairro, cidade, telefone, whatsapp, email, cnpj, observacoes, ativo, data_cadastro)
                                                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                                             (
-                                                row_dict.get("nome"),
+                                                nome_cp,
                                                 row_dict.get("endereco"),
                                                 row_dict.get("bairro"),
                                                 row_dict.get("cidade"),
@@ -10216,6 +10221,10 @@ elif menu_principal == "⚙️ Configurações":
                                         )
                                         if cur_l.rowcount:
                                             total_cp += 1
+                                        r = cur_l.execute("SELECT id FROM clinicas_parceiras WHERE nome=?", (nome_cp,)).fetchone()
+                                        novo_id = (r[0] if isinstance(r, (list, tuple)) else r["id"]) if r else None
+                                        if novo_id is not None and old_id is not None:
+                                            map_clinica_parceiras[int(old_id)] = novo_id
                             except sqlite3.OperationalError:
                                 pass
                             # 5) Laudos (mapear paciente_id e clinica_id)
@@ -10231,7 +10240,8 @@ elif menu_principal == "⚙️ Configurações":
                                     for row in rows_laudo:
                                         row_d = dict(zip(colunas_laudo, row))
                                         novo_paciente_id = map_paciente.get(int(row_d["paciente_id"])) if row_d.get("paciente_id") else None
-                                        novo_clinica_id = map_clinica.get(int(row_d["clinica_id"])) if row_d.get("clinica_id") else None
+                                        old_clinica_id = int(row_d["clinica_id"]) if row_d.get("clinica_id") else None
+                                        novo_clinica_id = (map_clinica.get(old_clinica_id) or map_clinica_parceiras.get(old_clinica_id)) if old_clinica_id is not None else None
                                         row_d["paciente_id"] = novo_paciente_id
                                         row_d["clinica_id"] = novo_clinica_id
                                         vals = [row_d.get(c) for c in colunas_sem_id]
