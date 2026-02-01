@@ -675,21 +675,29 @@ if "database" in sys.modules:
 def _db_conn_safe():
     """Abre o banco; se estiver corrompido/travado (ex.: após 502 na importação), reinicia o arquivo para o app voltar a abrir."""
     import time
+    conn = None
     try:
         conn = sqlite3.connect(str(DB_PATH), timeout=10)
         conn.execute("SELECT 1")
         conn.row_factory = sqlite3.Row
         return conn
     except Exception:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
         try:
             path = Path(DB_PATH)
             if path.exists():
                 backup = path.parent / (path.stem + ".corrupted." + str(int(time.time())) + path.suffix)
-                path.rename(backup)
+                try:
+                    path.rename(backup)
+                except Exception:
+                    try:
+                        path.unlink()
+                    except Exception:
+                        pass
             path.parent.mkdir(parents=True, exist_ok=True)
             conn = sqlite3.connect(str(DB_PATH))
             conn.row_factory = sqlite3.Row
