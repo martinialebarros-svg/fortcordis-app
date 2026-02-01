@@ -4368,6 +4368,7 @@ elif menu_principal == "📋 Prontuário":
 
     # Prontuário usa o mesmo banco do app (DB_PATH) — obrigatório no deploy
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _db_init()  # Garante tabelas e colunas (ativo em tutores, etc.) antes das queries
 
     # Abas do prontuário
     tab_busca, tab_tutores, tab_pacientes, tab_laudos, tab_consultas = st.tabs([
