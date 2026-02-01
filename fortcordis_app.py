@@ -701,6 +701,16 @@ def _db_init():
         UNIQUE(tutor_id, nome_key, especie),
         FOREIGN KEY(tutor_id) REFERENCES tutores(id)
     )""")
+    # Colunas usadas pelo Prontuário (adiciona se não existirem)
+    for col, tipo in [("ativo", "INTEGER DEFAULT 1"), ("peso_kg", "REAL"), ("microchip", "TEXT"), ("observacoes", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE pacientes ADD COLUMN {col} {tipo}")
+        except sqlite3.OperationalError:
+            pass
+    try:
+        conn.execute("ALTER TABLE tutores ADD COLUMN whatsapp TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
 
 def db_upsert_clinica(nome: str):
@@ -4355,8 +4365,8 @@ elif menu_principal == "📋 Prontuário":
         st.error("❌ Você não tem permissão para acessar o prontuário")
         st.stop()
 
-    # ⚠️ USA O MESMO BANCO DOS CADASTROS/LAUDOS (/DB/)
-    DB_PRONTUARIO = Path.home() / "FortCordis" / "DB" / "fortcordis.db"
+    # Prontuário usa o mesmo banco do app (DB_PATH) — obrigatório no deploy
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     # Abas do prontuário
     tab_busca, tab_tutores, tab_pacientes, tab_laudos, tab_consultas = st.tabs([
@@ -4373,7 +4383,13 @@ elif menu_principal == "📋 Prontuário":
 
     with tab_busca:
         st.subheader("🔍 Busca Rápida de Pacientes")
-        st.caption(f"📁 Conectado ao banco principal com {133} tutores e {136} pacientes")
+        try:
+            _c = _db_conn()
+            n_tut = _c.execute("SELECT COUNT(*) FROM tutores").fetchone()[0]
+            n_pac = _c.execute("SELECT COUNT(*) FROM pacientes").fetchone()[0]
+            st.caption(f"📁 Conectado ao banco principal com {n_tut} tutores e {n_pac} pacientes")
+        except Exception:
+            st.caption("📁 Conectado ao banco principal")
 
         col_busca1, col_busca2 = st.columns([3, 1])
 
@@ -4392,7 +4408,7 @@ elif menu_principal == "📋 Prontuário":
             )
 
         if termo_busca:
-            conn_pront = sqlite3.connect(str(DB_PRONTUARIO))
+            conn_pront = sqlite3.connect(str(DB_PATH))
 
             # Busca case-insensitive usando UPPER()
             termo_busca_upper = termo_busca.upper()
@@ -4544,7 +4560,7 @@ elif menu_principal == "📋 Prontuário":
                     st.write("• A busca não diferencia maiúsculas/minúsculas")
 
                     # Mostra quantos pacientes existem
-                    conn_help = sqlite3.connect(str(DB_PRONTUARIO))
+                    conn_help = sqlite3.connect(str(DB_PATH))
                     try:
                         total_pac = pd.read_sql_query(
                             "SELECT COUNT(*) as total FROM pacientes WHERE ativo = 1 OR ativo IS NULL",
@@ -4666,7 +4682,7 @@ elif menu_principal == "📋 Prontuário":
                     if not tutor_nome or not telefone_tutor:
                         st.error("❌ Preencha nome e celular/telefone (obrigatórios)")
                     else:
-                        conn_tutor = sqlite3.connect(str(DB_PRONTUARIO))
+                        conn_tutor = sqlite3.connect(str(DB_PATH))
                         cursor_tutor = conn_tutor.cursor()
                         
                         try:
@@ -4705,7 +4721,7 @@ elif menu_principal == "📋 Prontuário":
         st.markdown("---")
         st.markdown("### 📋 Tutores Cadastrados")
         
-        conn_list = sqlite3.connect(str(DB_PRONTUARIO))
+        conn_list = sqlite3.connect(str(DB_PATH))
         
         try:
             tutores_df = pd.read_sql_query("""
@@ -4760,7 +4776,7 @@ elif menu_principal == "📋 Prontuário":
             with st.expander("➕ Cadastrar Novo Paciente", expanded=True if tutor_pre_selecionado else False):
                 
                 # Buscar tutores (mesmo banco dos cadastros: /DB/fortcordis.db)
-                conn_pac = sqlite3.connect(str(DB_PRONTUARIO))
+                conn_pac = sqlite3.connect(str(DB_PATH))
                 
                 tutores_opcoes = pd.read_sql_query(
                     "SELECT id, nome, telefone FROM tutores WHERE (ativo = 1 OR ativo IS NULL) ORDER BY nome",
@@ -4921,7 +4937,7 @@ elif menu_principal == "📋 Prontuário":
         st.markdown("---")
         st.markdown("### 📋 Pacientes Cadastrados")
         
-        conn_list_pac = sqlite3.connect(str(DB_PRONTUARIO))
+        conn_list_pac = sqlite3.connect(str(DB_PATH))
         
         try:
             pacientes_df = pd.read_sql_query("""
@@ -4976,7 +4992,7 @@ elif menu_principal == "📋 Prontuário":
             
             st.markdown("### 1️⃣ Selecione o Paciente")
             
-            conn_cons = sqlite3.connect(str(DB_PRONTUARIO))
+            conn_cons = sqlite3.connect(str(DB_PATH))
             
             # Busca pacientes com dados do tutor (mesmo banco dos cadastros: /DB/fortcordis.db)
             pacientes_query = """
@@ -5393,7 +5409,7 @@ elif menu_principal == "📋 Prontuário":
             st.markdown("---")
             st.markdown("### 📋 Consultas Recentes")
             
-            conn_hist = sqlite3.connect(str(DB_PRONTUARIO))
+            conn_hist = sqlite3.connect(str(DB_PATH))
             
             try:
                 consultas_df = pd.read_sql_query("""
