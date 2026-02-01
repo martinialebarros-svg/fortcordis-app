@@ -707,10 +707,11 @@ def _db_init():
             conn.execute(f"ALTER TABLE pacientes ADD COLUMN {col} {tipo}")
         except sqlite3.OperationalError:
             pass
-    try:
-        conn.execute("ALTER TABLE tutores ADD COLUMN whatsapp TEXT")
-    except sqlite3.OperationalError:
-        pass
+    for col, tipo in [("whatsapp", "TEXT"), ("ativo", "INTEGER DEFAULT 1")]:
+        try:
+            conn.execute(f"ALTER TABLE tutores ADD COLUMN {col} {tipo}")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
 
 def db_upsert_clinica(nome: str):
