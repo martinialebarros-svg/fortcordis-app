@@ -10101,15 +10101,31 @@ elif menu_principal == "⚙️ Configurações":
                 if st.button("🔄 Importar agora", key="btn_importar_backup", type="primary"):
                     import tempfile
                     import io
+                    erros_import = []
                     try:
                         bytes_backup = arquivo_backup.read()
-                        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-                            tmp.write(bytes_backup)
-                            tmp_path = tmp.name
+                        if not bytes_backup:
+                            st.error("O arquivo está vazio. Gere o backup novamente com exportar_backup.py.")
+                        else:
+                            with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+                                tmp.write(bytes_backup)
+                                tmp_path = tmp.name
                         try:
                             conn_backup = sqlite3.connect(tmp_path)
                             conn_backup.row_factory = sqlite3.Row
                             cur_b = conn_backup.cursor()
+                            # Pré-visualizar conteúdo do backup
+                            def _count_backup(tabela):
+                                try:
+                                    cur_b.execute(f"SELECT COUNT(*) FROM {tabela}")
+                                    return cur_b.fetchone()[0]
+                                except sqlite3.OperationalError:
+                                    return 0
+                            n_c_b, n_t_b = _count_backup("clinicas"), _count_backup("tutores")
+                            n_p_b = _count_backup("pacientes")
+                            n_l_b = _count_backup("laudos_ecocardiograma") + _count_backup("laudos_eletrocardiograma") + _count_backup("laudos_pressao_arterial")
+                            n_cp_b = _count_backup("clinicas_parceiras")
+                            st.info(f"📂 Conteúdo do backup: {n_c_b} clínicas, {n_t_b} tutores, {n_p_b} pacientes, {n_l_b} laudos, {n_cp_b} clínicas parceiras.")
                             # Usar apenas conexão nova (não _db_conn em cache) para evitar "Cannot operate on a closed database"
                             conn_local = sqlite3.connect(str(DB_PATH))
                             cur_l = conn_local.cursor()
@@ -10179,8 +10195,8 @@ elif menu_principal == "⚙️ Configurações":
                                         novo_id = cur_l.lastrowid
                                         total_c += 1
                                     map_clinica[int(row["id"])] = novo_id
-                            except sqlite3.OperationalError:
-                                pass
+                            except sqlite3.OperationalError as e:
+                                erros_import.append(("clinicas", str(e)))
                             # 2) Tutores — evita duplicata por nome_key
                             try:
                                 cur_b.execute("SELECT id, nome, nome_key, telefone, created_at FROM tutores")
@@ -10196,8 +10212,8 @@ elif menu_principal == "⚙️ Configurações":
                                         novo_id = cur_l.lastrowid
                                         total_t += 1
                                     map_tutor[int(row["id"])] = novo_id
-                            except sqlite3.OperationalError:
-                                pass
+                            except sqlite3.OperationalError as e:
+                                erros_import.append(("tutores", str(e)))
                             # 3) Pacientes (usar map_tutor; evita duplicata por tutor_id + nome_key + especie)
                             try:
                                 cur_b.execute("SELECT id, tutor_id, nome, nome_key, especie, raca, sexo, nascimento, created_at FROM pacientes")
@@ -10230,8 +10246,8 @@ elif menu_principal == "⚙️ Configurações":
                                         novo_id = cur_l.lastrowid
                                         total_p += 1
                                     map_paciente[int(row["id"])] = novo_id
-                            except sqlite3.OperationalError:
-                                pass
+                            except sqlite3.OperationalError as e:
+                                erros_import.append(("pacientes", str(e)))
                             # 4) Clinicas parceiras (INSERT OR IGNORE por nome; mapear id para laudos)
                             try:
                                 cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='clinicas_parceiras'")
@@ -10266,8 +10282,8 @@ elif menu_principal == "⚙️ Configurações":
                                         novo_id = (r[0] if isinstance(r, (list, tuple)) else r["id"]) if r else None
                                         if novo_id is not None and old_id is not None:
                                             map_clinica_parceiras[int(old_id)] = novo_id
-                            except sqlite3.OperationalError:
-                                pass
+                            except sqlite3.OperationalError as e:
+                                erros_import.append(("clinicas_parceiras", str(e)))
                             # 5) Laudos (mapear paciente_id e clinica_id; só inserir colunas que existem no destino)
                             for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
                                 try:
@@ -10330,10 +10346,10 @@ elif menu_principal == "⚙️ Configurações":
                                                 vals,
                                             )
                                             total_l += 1
-                                        except sqlite3.OperationalError:
-                                            pass
-                                except sqlite3.OperationalError:
-                                    pass
+                                        except sqlite3.OperationalError as e:
+                                            erros_import.append((f"laudos_{tabela}", str(e)))
+                                except sqlite3.OperationalError as e:
+                                    erros_import.append((tabela, str(e)))
                             # Preencher nome_paciente, nome_clinica e nome_tutor quando vazios (a partir das tabelas vinculadas no destino)
                             for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
                                 try:
@@ -10358,6 +10374,17 @@ elif menu_principal == "⚙️ Configurações":
                                 f"✅ Importação concluída: {total_c} clínicas, {total_t} tutores, {total_p} pacientes, "
                                 f"{total_l} laudos, {total_cp} clínicas parceiras."
                             )
+                            if erros_import:
+                                st.error("Alguns passos falharam: " + " | ".join(f"{k}: {v}" for k, v in erros_import))
+                            if n_l_b > 0 and total_l == 0:
+                                st.warning(
+                                    "O backup tinha laudos mas nenhum foi inserido. "
+                                    "Possível causa: nomes de colunas diferentes. Gere o backup com exportar_backup.py na pasta do projeto FortCordis_Novo."
+                                )
+                            if (n_c_b > 0 or n_t_b > 0 or n_p_b > 0) and total_c == 0 and total_t == 0 and total_p == 0:
+                                st.warning(
+                                    "O backup tinha dados mas nada foi inserido. Verifique se o arquivo .db foi gerado pelo exportar_backup.py e se as tabelas existem no backup."
+                                )
                         except Exception as e:
                             st.error(f"Erro ao importar: {e}")
                             try:
