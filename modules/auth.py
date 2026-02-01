@@ -944,7 +944,7 @@ def mostrar_tela_login():
                     email_limpo = email.strip().lower()
                     ok, msg = criar_usuario(nome=nome.strip(), email=email_limpo, senha=senha, papel="admin")
                     if ok:
-                        # Login automático após criar conta (evita "E-mail ou senha incorretos" no deploy/rerun)
+                        # Login automático após criar conta (evita voltar pra tela de login)
                         try:
                             conn = sqlite3.connect(str(DB_PATH))
                             cur = conn.cursor()
@@ -953,11 +953,15 @@ def mostrar_tela_login():
                             conn.close()
                             if row:
                                 usuario_id, nome_user = row
+                                try:
+                                    perms = carregar_permissoes_usuario(usuario_id)
+                                except Exception:
+                                    perms = []
                                 st.session_state["autenticado"] = True
                                 st.session_state["usuario_id"] = usuario_id
                                 st.session_state["usuario_nome"] = nome_user
                                 st.session_state["usuario_email"] = email_limpo
-                                st.session_state["permissoes"] = carregar_permissoes_usuario(usuario_id)
+                                st.session_state["permissoes"] = perms
                                 st.success("✅ Conta criada! Entrando no sistema...")
                                 st.rerun()
                         except Exception:
