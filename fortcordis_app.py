@@ -10002,9 +10002,46 @@ elif menu_principal == "⚙️ Configurações":
                             conn_backup = sqlite3.connect(tmp_path)
                             conn_backup.row_factory = sqlite3.Row
                             cur_b = conn_backup.cursor()
-                            _db_init()
-                            conn_local = _db_conn()
+                            # Usar apenas conexão nova (não _db_conn em cache) para evitar "Cannot operate on a closed database"
+                            conn_local = sqlite3.connect(str(DB_PATH))
                             cur_l = conn_local.cursor()
+                            # Inicializar tabelas com conn_local (sem chamar _db_init que usa cache)
+                            cur_l.execute("""CREATE TABLE IF NOT EXISTS clinicas (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                nome TEXT NOT NULL,
+                                nome_key TEXT NOT NULL UNIQUE,
+                                created_at TEXT NOT NULL
+                            )""")
+                            cur_l.execute("""CREATE TABLE IF NOT EXISTS tutores (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                nome TEXT NOT NULL,
+                                nome_key TEXT NOT NULL UNIQUE,
+                                telefone TEXT,
+                                created_at TEXT NOT NULL
+                            )""")
+                            cur_l.execute("""CREATE TABLE IF NOT EXISTS pacientes (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                tutor_id INTEGER NOT NULL,
+                                nome TEXT NOT NULL,
+                                nome_key TEXT NOT NULL,
+                                especie TEXT NOT NULL DEFAULT '',
+                                raca TEXT,
+                                sexo TEXT,
+                                nascimento TEXT,
+                                created_at TEXT NOT NULL,
+                                UNIQUE(tutor_id, nome_key, especie),
+                                FOREIGN KEY(tutor_id) REFERENCES tutores(id)
+                            )""")
+                            for col, tipo in [("ativo", "INTEGER DEFAULT 1"), ("peso_kg", "REAL"), ("microchip", "TEXT"), ("observacoes", "TEXT")]:
+                                try:
+                                    cur_l.execute(f"ALTER TABLE pacientes ADD COLUMN {col} {tipo}")
+                                except sqlite3.OperationalError:
+                                    pass
+                            for col, tipo in [("whatsapp", "TEXT"), ("ativo", "INTEGER DEFAULT 1")]:
+                                try:
+                                    cur_l.execute(f"ALTER TABLE tutores ADD COLUMN {col} {tipo}")
+                                except sqlite3.OperationalError:
+                                    pass
                             _criar_tabelas_laudos_se_nao_existirem(cur_l)
                             conn_local.commit()
                             map_clinica = {}
