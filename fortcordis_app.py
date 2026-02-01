@@ -10174,64 +10174,97 @@ elif menu_principal == "⚙️ Configurações":
                                         cur_l.execute(f"ALTER TABLE {_tab} ADD COLUMN {_col} {_tipo}")
                                     except sqlite3.OperationalError:
                                         pass
+                            # Garantir que clinicas_parceiras existe (pode não existir em deploy novo)
+                            cur_l.execute("""
+                                CREATE TABLE IF NOT EXISTS clinicas_parceiras (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    nome TEXT NOT NULL UNIQUE,
+                                    endereco TEXT,
+                                    bairro TEXT,
+                                    cidade TEXT,
+                                    telefone TEXT,
+                                    whatsapp TEXT,
+                                    email TEXT,
+                                    cnpj TEXT,
+                                    inscricao_estadual TEXT,
+                                    responsavel_veterinario TEXT,
+                                    crmv_responsavel TEXT,
+                                    observacoes TEXT,
+                                    ativo INTEGER DEFAULT 1,
+                                    data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
+                                )
+                            """)
                             conn_local.commit()
                             map_clinica = {}
                             map_clinica_parceiras = {}
                             map_tutor = {}
                             map_paciente = {}
                             total_c, total_t, total_p, total_l, total_cp = 0, 0, 0, 0, 0
-                            # 1) Clinicas (tabela simples) — evita duplicata por nome_key (gerar nome_key se não existir no backup)
+                            reused_c, reused_t = 0, 0
+                            # 1) Clinicas (tabela simples) — evita duplicata por nome_key; SELECT só colunas que existem no backup
                             try:
                                 cur_b.execute("PRAGMA table_info(clinicas)")
                                 cols_c = [c[1] for c in cur_b.fetchall()]
-                                tem_nome_key = "nome_key" in cols_c
-                                tem_created = "created_at" in cols_c
-                                sel_c = "SELECT id, nome, nome_key, created_at FROM clinicas" if tem_nome_key else ("SELECT id, nome, created_at FROM clinicas" if tem_created else "SELECT id, nome FROM clinicas")
-                                cur_b.execute(sel_c)
-                                for row in cur_b.fetchall():
-                                    row = dict(row)
-                                    nome_key = (row.get("nome_key") or "").strip() if tem_nome_key else _norm_key(row.get("nome") or "")
-                                    if not nome_key:
-                                        nome_key = _norm_key(row.get("nome") or "") or "sem_nome"
-                                    r = cur_l.execute("SELECT id FROM clinicas WHERE nome_key=?", (nome_key,)).fetchone()
-                                    if r:
-                                        novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
-                                    else:
-                                        cur_l.execute(
-                                            "INSERT INTO clinicas (nome, nome_key, created_at) VALUES (?,?,?)",
-                                            (row.get("nome") or "", nome_key, row.get("created_at") if tem_created else datetime.now().isoformat()),
-                                        )
-                                        novo_id = cur_l.lastrowid
-                                        total_c += 1
-                                    map_clinica[int(row["id"])] = novo_id
+                                if not cols_c:
+                                    erros_import.append(("clinicas", "Tabela clinicas vazia ou sem colunas no backup"))
+                                else:
+                                    tem_nome_key = "nome_key" in cols_c
+                                    tem_created = "created_at" in cols_c
+                                    sel_c = "SELECT " + ", ".join(cols_c) + " FROM clinicas"
+                                    cur_b.execute(sel_c)
+                                    for row in cur_b.fetchall():
+                                        row = dict(row)
+                                        nome_key = (row.get("nome_key") or "").strip() if tem_nome_key else _norm_key(row.get("nome") or "")
+                                        if not nome_key:
+                                            nome_key = _norm_key(row.get("nome") or "") or "sem_nome"
+                                        r = cur_l.execute("SELECT id FROM clinicas WHERE nome_key=?", (nome_key,)).fetchone()
+                                        if r:
+                                            novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
+                                            reused_c += 1
+                                        else:
+                                            cur_l.execute(
+                                                "INSERT INTO clinicas (nome, nome_key, created_at) VALUES (?,?,?)",
+                                                (row.get("nome") or "", nome_key, row.get("created_at") if tem_created else datetime.now().isoformat()),
+                                            )
+                                            novo_id = cur_l.lastrowid
+                                            total_c += 1
+                                        map_clinica[int(row["id"])] = novo_id
                             except sqlite3.OperationalError as e:
                                 erros_import.append(("clinicas", str(e)))
-                            # 2) Tutores — evita duplicata por nome_key (gerar nome_key se não existir no backup)
+                            except Exception as e:
+                                erros_import.append(("clinicas", f"{type(e).__name__}: {e}"))
+                            # 2) Tutores — evita duplicata por nome_key; SELECT só colunas que existem no backup
                             try:
                                 cur_b.execute("PRAGMA table_info(tutores)")
                                 cols_t = [c[1] for c in cur_b.fetchall()]
-                                tem_nome_key_t = "nome_key" in cols_t
-                                tem_created_t = "created_at" in cols_t
-                                sel_t = "SELECT id, nome, nome_key, telefone, created_at FROM tutores" if tem_nome_key_t else ("SELECT id, nome, telefone, created_at FROM tutores" if tem_created_t else "SELECT id, nome, telefone FROM tutores")
-                                cur_b.execute(sel_t)
-                                for row in cur_b.fetchall():
-                                    row = dict(row)
-                                    nome_key_t = (row.get("nome_key") or "").strip() if tem_nome_key_t else _norm_key(row.get("nome") or "")
-                                    if not nome_key_t:
-                                        nome_key_t = _norm_key(row.get("nome") or "") or "sem_nome"
-                                    r = cur_l.execute("SELECT id FROM tutores WHERE nome_key=?", (nome_key_t,)).fetchone()
-                                    if r:
-                                        novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
-                                    else:
-                                        cur_l.execute(
-                                            "INSERT INTO tutores (nome, nome_key, telefone, created_at) VALUES (?,?,?,?)",
-                                            (row.get("nome") or "", nome_key_t, row.get("telefone") or None, row.get("created_at") if tem_created_t else datetime.now().isoformat()),
-                                        )
-                                        novo_id = cur_l.lastrowid
-                                        total_t += 1
-                                    map_tutor[int(row["id"])] = novo_id
+                                if not cols_t:
+                                    erros_import.append(("tutores", "Tabela tutores vazia ou sem colunas no backup"))
+                                else:
+                                    tem_nome_key_t = "nome_key" in cols_t
+                                    tem_created_t = "created_at" in cols_t
+                                    sel_t = "SELECT " + ", ".join(cols_t) + " FROM tutores"
+                                    cur_b.execute(sel_t)
+                                    for row in cur_b.fetchall():
+                                        row = dict(row)
+                                        nome_key_t = (row.get("nome_key") or "").strip() if tem_nome_key_t else _norm_key(row.get("nome") or "")
+                                        if not nome_key_t:
+                                            nome_key_t = _norm_key(row.get("nome") or "") or "sem_nome"
+                                        r = cur_l.execute("SELECT id FROM tutores WHERE nome_key=?", (nome_key_t,)).fetchone()
+                                        if r:
+                                            novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
+                                            reused_t += 1
+                                        else:
+                                            cur_l.execute(
+                                                "INSERT INTO tutores (nome, nome_key, telefone, created_at) VALUES (?,?,?,?)",
+                                                (row.get("nome") or "", nome_key_t, row.get("telefone") or None, row.get("created_at") if tem_created_t else datetime.now().isoformat()),
+                                            )
+                                            novo_id = cur_l.lastrowid
+                                            total_t += 1
+                                        map_tutor[int(row["id"])] = novo_id
                             except sqlite3.OperationalError as e:
                                 erros_import.append(("tutores", str(e)))
+                            except Exception as e:
+                                erros_import.append(("tutores", f"{type(e).__name__}: {e}"))
                             # 3) Pacientes (usar map_tutor; evita duplicata por tutor_id + nome_key + especie; SELECT só colunas que existem no backup)
                             try:
                                 cur_b.execute("PRAGMA table_info(pacientes)")
@@ -10275,6 +10308,8 @@ elif menu_principal == "⚙️ Configurações":
                                     map_paciente[int(row["id"])] = novo_id
                             except sqlite3.OperationalError as e:
                                 erros_import.append(("pacientes", str(e)))
+                            except Exception as e:
+                                erros_import.append(("pacientes", f"{type(e).__name__}: {e}"))
                             # 4) Clinicas parceiras (INSERT OR IGNORE por nome; só colunas que existem no destino)
                             try:
                                 cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='clinicas_parceiras'")
@@ -10308,6 +10343,8 @@ elif menu_principal == "⚙️ Configurações":
                                             map_clinica_parceiras[int(old_id)] = novo_id
                             except sqlite3.OperationalError as e:
                                 erros_import.append(("clinicas_parceiras", str(e)))
+                            except Exception as e:
+                                erros_import.append(("clinicas_parceiras", f"{type(e).__name__}: {e}"))
                             # 5) Laudos (mapear paciente_id e clinica_id; só inserir colunas que existem no destino)
                             for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
                                 try:
@@ -10394,8 +10431,10 @@ elif menu_principal == "⚙️ Configurações":
                                 os.remove(tmp_path)
                             except Exception:
                                 pass
+                            msg_c = f"{total_c + reused_c} clínicas ({total_c} novas, {reused_c} já existentes)" if (total_c or reused_c) else "0 clínicas"
+                            msg_t = f"{total_t + reused_t} tutores ({total_t} novos, {reused_t} já existentes)" if (total_t or reused_t) else "0 tutores"
                             st.success(
-                                f"✅ Importação concluída: {total_c} clínicas, {total_t} tutores, {total_p} pacientes, "
+                                f"✅ Importação concluída: {msg_c}, {msg_t}, {total_p} pacientes, "
                                 f"{total_l} laudos, {total_cp} clínicas parceiras."
                             )
                             if erros_import:
