@@ -31,6 +31,20 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Captura erros não tratados para exibir na página (evita "Error running app" genérico)
+import traceback as _traceback_mod
+_original_excepthook = sys.excepthook
+def _fortcordis_excepthook(etype, value, tb):
+    try:
+        st.error("O aplicativo encontrou um erro. Abra **Detalhes do erro** e copie o texto para enviar ao suporte.")
+        with st.expander("Detalhes do erro (copie e envie para diagnóstico)"):
+            st.code("".join(_traceback_mod.format_exception(etype, value, tb)), language="text")
+        st.stop()
+    except Exception:
+        pass
+    _original_excepthook(etype, value, tb)
+sys.excepthook = _fortcordis_excepthook
+
 # CSS global para melhorar o design (sem alterar funcionalidades)
 st.markdown("""
 <style>
@@ -4191,13 +4205,25 @@ for pasta in [PASTA_LAUDOS, PASTA_PRESCRICOES, PASTA_DOCUMENTOS]:
 
 # Se não estiver logado, mostra tela de login (ou cria primeiro usuário e entra)
 if not st.session_state.get("autenticado"):
-    mostrar_tela_login()
+    try:
+        mostrar_tela_login()
+    except Exception as e:
+        st.error("Erro na tela de login ou ao criar primeiro usuário.")
+        with st.expander("Detalhes do erro (copie e envie para diagnóstico)"):
+            st.code(_traceback_mod.format_exc(), language="text")
+        st.stop()
     if not st.session_state.get("autenticado"):
         st.stop()
 
 # Se chegou aqui, está logado!
 # Mostra info do usuário na sidebar
-mostrar_info_usuario()
+try:
+    mostrar_info_usuario()
+except Exception as e:
+    st.error("Erro ao carregar dados do usuário.")
+    with st.expander("Detalhes do erro (copie e envie para diagnóstico)"):
+        st.code(_traceback_mod.format_exc(), language="text")
+    st.stop()
 
 # Menu principal já definido no início do script (único radio, evita StreamlitDuplicateElementId)
 
