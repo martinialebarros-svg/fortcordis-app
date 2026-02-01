@@ -509,6 +509,19 @@ def listar_usuarios() -> list:
     return usuarios
 
 
+def contar_usuarios():
+    """Retorna a quantidade de usuários no banco (0 se tabela não existir)."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM usuarios")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+    except Exception:
+        return 0
+
+
 def criar_usuario_admin_inicial():
     """
     Cria o usuário admin padrão se não existir nenhum.
@@ -882,6 +895,60 @@ def mostrar_tela_login():
     
     limpar_tokens_expirados()
     
+    # Garante que tabelas e papéis existem (primeira vez / deploy novo)
+    try:
+        inicializar_tabelas_auth()
+        inserir_papeis_padrao()
+        num_usuarios = contar_usuarios()
+    except Exception:
+        num_usuarios = 0
+    
+    # Forçar tela de primeiro usuário: adicione ?primeiro_usuario=1 na URL
+    try:
+        # Streamlit 1.28+: st.query_params.get("key") retorna string
+        q = getattr(st, "query_params", None)
+        if q is not None:
+            p1 = q.get("primeiro_usuario") or q.get("criar_admin")
+            force_criar = p1 == "1" if isinstance(p1, str) else (p1 and "1" in (p1 if isinstance(p1, (list, tuple)) else [p1]))
+        else:
+            # Versão antiga: experimental_get_query_params retorna dict de listas
+            exp = getattr(st, "experimental_get_query_params", lambda: {})
+            params = exp() or {}
+            p1 = (params.get("primeiro_usuario") or params.get("criar_admin")) or []
+            force_criar = "1" in (p1 if isinstance(p1, list) else [p1])
+    except Exception:
+        force_criar = False
+    
+    # Também forçar pela session_state (botão "Primeiro acesso?" na tela de login)
+    if st.session_state.get("mostrar_criar_primeiro_usuario"):
+        force_criar = True
+        st.session_state.pop("mostrar_criar_primeiro_usuario", None)
+    
+    # Se não existe nenhum usuário (ou forçou pela URL), mostra tela "Criar primeiro usuário (admin)"
+    if num_usuarios == 0 or force_criar:
+        st.markdown("### 👤 Criar primeiro usuário (administrador)")
+        st.caption("Não há usuários no sistema. Crie o primeiro para acessar.")
+        with st.form("form_primeiro_usuario", clear_on_submit=True):
+            nome = st.text_input("Nome completo", key="primeiro_nome")
+            email = st.text_input("E-mail (será usado para login)", key="primeiro_email")
+            senha = st.text_input("Senha (mínimo 8 caracteres)", type="password", key="primeiro_senha")
+            senha2 = st.text_input("Confirmar senha", type="password", key="primeiro_senha2")
+            if st.form_submit_button("Criar e entrar"):
+                if not nome or not email or not senha:
+                    st.error("Preencha nome, e-mail e senha.")
+                elif len(senha) < 8:
+                    st.error("A senha deve ter no mínimo 8 caracteres.")
+                elif senha != senha2:
+                    st.error("As senhas não coincidem.")
+                else:
+                    ok, msg = criar_usuario(nome=nome.strip(), email=email.strip().lower(), senha=senha, papel="admin")
+                    if ok:
+                        st.success(msg + " Faça login abaixo.")
+                        st.rerun()
+                    else:
+                        st.error(msg)
+        return False
+    
     # ✅ VERIFICA SESSÃO PERSISTENTE
     if "auth_token" not in st.session_state:
         token_arquivo = carregar_sessao_persistente()
@@ -905,6 +972,13 @@ def mostrar_tela_login():
     # ========================================================================
     
     st.markdown("### 🔐 Acesso ao Sistema")
+    
+    # Botão para abrir tela "Criar primeiro usuário" (útil quando ?primeiro_usuario=1 não funciona)
+    if st.button("👤 Primeiro acesso? Criar usuário administrador", type="secondary", use_container_width=True):
+        st.session_state["mostrar_criar_primeiro_usuario"] = True
+        st.rerun()
+    
+    st.markdown("---")
     
     with st.form("form_login", clear_on_submit=False):
         email = st.text_input("📧 E-mail", key="input_email")
