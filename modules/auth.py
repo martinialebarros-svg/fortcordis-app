@@ -1094,10 +1094,12 @@ def mostrar_tela_login():
                     conn.close()
                     
                     st.error("❌ E-mail ou senha incorretos")
+                    st.caption("💡 Se você acabou de criar a conta, use **Primeiro acesso? Criar usuário administrador** acima — após criar, você entrará automaticamente.")
                     return False
             else:
                 conn.close()
                 st.error("❌ E-mail ou senha incorretos")
+                st.caption("💡 Se você acabou de criar a conta, use **Primeiro acesso? Criar usuário administrador** acima — após criar, você entrará automaticamente.")
                 return False
                 
         except Exception as e:
