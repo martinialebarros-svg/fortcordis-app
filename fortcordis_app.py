@@ -5548,9 +5548,8 @@ elif menu_principal == "📋 Prontuário":
             with open(caminho_json, 'w', encoding='utf-8') as f:
                 json.dump(dados_atualizados, f, ensure_ascii=False, indent=2)
             
-            # Atualiza banco se necessário
+            # Atualiza banco se necessário (usa DB_PATH do projeto para deploy)
             if novo_pdf_path:
-                DB_PATH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
                 conn = sqlite3.connect(str(DB_PATH))
                 cursor = conn.cursor()
                 
@@ -9083,11 +9082,12 @@ elif menu_principal == "⚙️ Configurações":
         
         st.title("⚙️ Configurações do Sistema")
         # Cria abas
-        tab_permissoes, tab_usuarios, tab_papeis, tab_sistema, tab_assinatura = st.tabs([
+        tab_permissoes, tab_usuarios, tab_papeis, tab_sistema, tab_importar, tab_assinatura = st.tabs([
             "🔐 Minhas Permissões",
             "👥 Usuários do Sistema",
             "🎭 Papéis e Permissões",
             "⚙️ Configurações Gerais",
+            "📥 Importar dados",
             "🖊️ Assinatura/Carimbo"
         ])
 
@@ -9118,10 +9118,9 @@ elif menu_principal == "⚙️ Configurações":
                 st.info(f"**📧 Email:** {usuario_email}")
             
             with col2:
-                # ✅ CORRIGIDO: Busca papéis do banco
+                # ✅ CORRIGIDO: Busca papéis do banco (usa DB_PATH do projeto para deploy)
                 import sqlite3
-                DB_PATH_AUTH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
-                conn_temp = sqlite3.connect(str(DB_PATH_AUTH))
+                conn_temp = sqlite3.connect(str(DB_PATH))
                 cursor_temp = conn_temp.cursor()
                 
                 cursor_temp.execute("""
@@ -9202,8 +9201,7 @@ elif menu_principal == "⚙️ Configurações":
             else:
                 import sqlite3
                 
-                DB_PATH_AUTH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
-                conn = sqlite3.connect(str(DB_PATH_AUTH))
+                conn = sqlite3.connect(str(DB_PATH))
                 
                 # Busca todos os usuários
                 query = """
@@ -9298,9 +9296,8 @@ elif menu_principal == "⚙️ Configurações":
                 # Seleciona usuário para editar permissões
                 st.markdown("#### 1️⃣ Selecione o Usuário")
                 
-                # Busca usuários novamente
-                DB_PATH_AUTH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
-                conn_perm = sqlite3.connect(str(DB_PATH_AUTH))
+                # Busca usuários novamente (usa DB_PATH do projeto para deploy)
+                conn_perm = sqlite3.connect(str(DB_PATH))
                 cursor_perm = conn_perm.cursor()
                 
                 cursor_perm.execute("""
@@ -9562,8 +9559,7 @@ elif menu_principal == "⚙️ Configurações":
             
             st.markdown("### 📋 Papéis Cadastrados")
             
-            DB_PATH_AUTH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
-            conn_papeis = sqlite3.connect(str(DB_PATH_AUTH))
+            conn_papeis = sqlite3.connect(str(DB_PATH))
             cursor_papeis = conn_papeis.cursor()
             
             # Busca todos os papéis
@@ -9927,6 +9923,176 @@ elif menu_principal == "⚙️ Configurações":
             
             **Em breve:** Interface completa de configurações
             """)
+
+        # ============================================================================
+        # ABA: IMPORTAR DADOS (backup local após deploy)
+        # ============================================================================
+        with tab_importar:
+            st.subheader("📥 Importar dados de backup")
+            st.caption(
+                "Após o deploy, o sistema fica vazio. Gere um backup no seu computador com o script "
+                "exportar_backup.py e envie o arquivo .db aqui para restaurar clínicas, tutores, pacientes e laudos."
+            )
+            arquivo_backup = st.file_uploader(
+                "Enviar arquivo de backup (.db)",
+                type=["db"],
+                key="upload_backup_db",
+            )
+            if arquivo_backup is not None:
+                if st.button("🔄 Importar agora", key="btn_importar_backup", type="primary"):
+                    import tempfile
+                    import io
+                    try:
+                        bytes_backup = arquivo_backup.read()
+                        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+                            tmp.write(bytes_backup)
+                            tmp_path = tmp.name
+                        try:
+                            conn_backup = sqlite3.connect(tmp_path)
+                            conn_backup.row_factory = sqlite3.Row
+                            cur_b = conn_backup.cursor()
+                            _db_init()
+                            conn_local = _db_conn()
+                            cur_l = conn_local.cursor()
+                            _criar_tabelas_laudos_se_nao_existirem(cur_l)
+                            conn_local.commit()
+                            map_clinica = {}
+                            map_tutor = {}
+                            map_paciente = {}
+                            total_c, total_t, total_p, total_l, total_cp = 0, 0, 0, 0, 0
+                            # 1) Clinicas (tabela simples) — evita duplicata por nome_key
+                            try:
+                                cur_b.execute("SELECT id, nome, nome_key, created_at FROM clinicas")
+                                for row in cur_b.fetchall():
+                                    r = cur_l.execute("SELECT id FROM clinicas WHERE nome_key=?", (row["nome_key"],)).fetchone()
+                                    if r:
+                                        novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
+                                    else:
+                                        cur_l.execute(
+                                            "INSERT INTO clinicas (nome, nome_key, created_at) VALUES (?,?,?)",
+                                            (row["nome"], row["nome_key"], row["created_at"] or datetime.now().isoformat()),
+                                        )
+                                        novo_id = cur_l.lastrowid
+                                        total_c += 1
+                                    map_clinica[int(row["id"])] = novo_id
+                            except sqlite3.OperationalError:
+                                pass
+                            # 2) Tutores — evita duplicata por nome_key
+                            try:
+                                cur_b.execute("SELECT id, nome, nome_key, telefone, created_at FROM tutores")
+                                for row in cur_b.fetchall():
+                                    r = cur_l.execute("SELECT id FROM tutores WHERE nome_key=?", (row["nome_key"],)).fetchone()
+                                    if r:
+                                        novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
+                                    else:
+                                        cur_l.execute(
+                                            "INSERT INTO tutores (nome, nome_key, telefone, created_at) VALUES (?,?,?,?)",
+                                            (row["nome"], row["nome_key"], row["telefone"] or None, row["created_at"] or datetime.now().isoformat()),
+                                        )
+                                        novo_id = cur_l.lastrowid
+                                        total_t += 1
+                                    map_tutor[int(row["id"])] = novo_id
+                            except sqlite3.OperationalError:
+                                pass
+                            # 3) Pacientes (usar map_tutor para tutor_id)
+                            try:
+                                cur_b.execute("SELECT id, tutor_id, nome, nome_key, especie, raca, sexo, nascimento, created_at FROM pacientes")
+                                for row in cur_b.fetchall():
+                                    novo_tutor_id = map_tutor.get(int(row["tutor_id"]))
+                                    if novo_tutor_id is None:
+                                        continue
+                                    cur_l.execute(
+                                        """INSERT INTO pacientes (tutor_id, nome, nome_key, especie, raca, sexo, nascimento, created_at)
+                                           VALUES (?,?,?,?,?,?,?,?)""",
+                                        (
+                                            novo_tutor_id,
+                                            row["nome"],
+                                            row["nome_key"],
+                                            row["especie"] or "",
+                                            row["raca"],
+                                            row["sexo"],
+                                            row["nascimento"],
+                                            row["created_at"] or datetime.now().isoformat(),
+                                        ),
+                                    )
+                                    map_paciente[int(row["id"])] = cur_l.lastrowid
+                                    total_p += 1
+                            except sqlite3.OperationalError:
+                                pass
+                            # 4) Clinicas parceiras (INSERT OR IGNORE por nome)
+                            try:
+                                cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='clinicas_parceiras'")
+                                if cur_b.fetchone():
+                                    cur_b.execute("PRAGMA table_info(clinicas_parceiras)")
+                                    cols_cp = [c[1] for c in cur_b.fetchall()]
+                                    cur_b.execute("SELECT * FROM clinicas_parceiras")
+                                    for row in cur_b.fetchall():
+                                        row_dict = dict(zip(cols_cp, row))
+                                        cur_l.execute(
+                                            """INSERT OR IGNORE INTO clinicas_parceiras (nome, endereco, bairro, cidade, telefone, whatsapp, email, cnpj, observacoes, ativo, data_cadastro)
+                                               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                            (
+                                                row_dict.get("nome"),
+                                                row_dict.get("endereco"),
+                                                row_dict.get("bairro"),
+                                                row_dict.get("cidade"),
+                                                row_dict.get("telefone"),
+                                                row_dict.get("whatsapp"),
+                                                row_dict.get("email"),
+                                                row_dict.get("cnpj"),
+                                                row_dict.get("observacoes"),
+                                                row_dict.get("ativo", 1),
+                                                row_dict.get("data_cadastro"),
+                                            ),
+                                        )
+                                        if cur_l.rowcount:
+                                            total_cp += 1
+                            except sqlite3.OperationalError:
+                                pass
+                            # 5) Laudos (mapear paciente_id e clinica_id)
+                            for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+                                try:
+                                    cur_b.execute(f"SELECT * FROM {tabela}")
+                                    rows_laudo = cur_b.fetchall()
+                                    if not rows_laudo:
+                                        continue
+                                    cur_b.execute(f"PRAGMA table_info({tabela})")
+                                    colunas_laudo = [c[1] for c in cur_b.fetchall()]
+                                    colunas_sem_id = [c for c in colunas_laudo if c != "id"]
+                                    for row in rows_laudo:
+                                        row_d = dict(zip(colunas_laudo, row))
+                                        novo_paciente_id = map_paciente.get(int(row_d["paciente_id"])) if row_d.get("paciente_id") else None
+                                        novo_clinica_id = map_clinica.get(int(row_d["clinica_id"])) if row_d.get("clinica_id") else None
+                                        row_d["paciente_id"] = novo_paciente_id
+                                        row_d["clinica_id"] = novo_clinica_id
+                                        vals = [row_d.get(c) for c in colunas_sem_id]
+                                        placeholders = ", ".join(["?" for _ in colunas_sem_id])
+                                        cur_l.execute(
+                                            f"INSERT INTO {tabela} ({', '.join(colunas_sem_id)}) VALUES ({placeholders})",
+                                            vals,
+                                        )
+                                        total_l += 1
+                                except sqlite3.OperationalError:
+                                    pass
+                            conn_local.commit()
+                            conn_backup.close()
+                            conn_local.close()
+                            try:
+                                os.remove(tmp_path)
+                            except Exception:
+                                pass
+                            st.success(
+                                f"✅ Importação concluída: {total_c} clínicas, {total_t} tutores, {total_p} pacientes, "
+                                f"{total_l} laudos, {total_cp} clínicas parceiras."
+                            )
+                        except Exception as e:
+                            st.error(f"Erro ao importar: {e}")
+                            try:
+                                os.remove(tmp_path)
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        st.error(f"Erro ao processar arquivo: {e}")
 
         # ============================================================================
         # ABA: ASSINATURA/CARIMBO (usada nos laudos)
