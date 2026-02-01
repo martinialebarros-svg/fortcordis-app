@@ -10082,29 +10082,38 @@ elif menu_principal == "⚙️ Configurações":
                                     map_tutor[int(row["id"])] = novo_id
                             except sqlite3.OperationalError:
                                 pass
-                            # 3) Pacientes (usar map_tutor para tutor_id)
+                            # 3) Pacientes (usar map_tutor; evita duplicata por tutor_id + nome_key + especie)
                             try:
                                 cur_b.execute("SELECT id, tutor_id, nome, nome_key, especie, raca, sexo, nascimento, created_at FROM pacientes")
                                 for row in cur_b.fetchall():
                                     novo_tutor_id = map_tutor.get(int(row["tutor_id"]))
                                     if novo_tutor_id is None:
                                         continue
-                                    cur_l.execute(
-                                        """INSERT INTO pacientes (tutor_id, nome, nome_key, especie, raca, sexo, nascimento, created_at)
-                                           VALUES (?,?,?,?,?,?,?,?)""",
-                                        (
-                                            novo_tutor_id,
-                                            row["nome"],
-                                            row["nome_key"],
-                                            row["especie"] or "",
-                                            row["raca"],
-                                            row["sexo"],
-                                            row["nascimento"],
-                                            row["created_at"] or datetime.now().isoformat(),
-                                        ),
-                                    )
-                                    map_paciente[int(row["id"])] = cur_l.lastrowid
-                                    total_p += 1
+                                    especie_val = row["especie"] or ""
+                                    r = cur_l.execute(
+                                        "SELECT id FROM pacientes WHERE tutor_id=? AND nome_key=? AND especie=?",
+                                        (novo_tutor_id, row["nome_key"], especie_val),
+                                    ).fetchone()
+                                    if r:
+                                        novo_id = r[0] if isinstance(r, (list, tuple)) else r["id"]
+                                    else:
+                                        cur_l.execute(
+                                            """INSERT INTO pacientes (tutor_id, nome, nome_key, especie, raca, sexo, nascimento, created_at)
+                                               VALUES (?,?,?,?,?,?,?,?)""",
+                                            (
+                                                novo_tutor_id,
+                                                row["nome"],
+                                                row["nome_key"],
+                                                especie_val,
+                                                row["raca"],
+                                                row["sexo"],
+                                                row["nascimento"],
+                                                row["created_at"] or datetime.now().isoformat(),
+                                            ),
+                                        )
+                                        novo_id = cur_l.lastrowid
+                                        total_p += 1
+                                    map_paciente[int(row["id"])] = novo_id
                             except sqlite3.OperationalError:
                                 pass
                             # 4) Clinicas parceiras (INSERT OR IGNORE por nome)
