@@ -1709,10 +1709,39 @@ def contar_laudos_do_banco():
         return 0
 
 
+def _backfill_nomes_laudos():
+    """Preenche nome_paciente, nome_clinica e nome_tutor nos laudos a partir das tabelas vinculadas (pacientes, clinicas, tutores).
+    Corrige laudos já importados que ficaram com essas colunas vazias."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        cur = conn.cursor()
+        for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+            try:
+                cur.execute(f"PRAGMA table_info({tabela})")
+                cols = [r[1] for r in cur.fetchall()]
+                if "nome_paciente" not in cols or "nome_clinica" not in cols or "nome_tutor" not in cols:
+                    continue
+                cur.execute(f"""UPDATE {tabela} SET nome_paciente = (SELECT nome FROM pacientes WHERE pacientes.id = {tabela}.paciente_id)
+                    WHERE (nome_paciente IS NULL OR TRIM(COALESCE(nome_paciente, '')) = '') AND paciente_id IS NOT NULL""")
+                cur.execute(f"""UPDATE {tabela} SET nome_clinica = COALESCE(
+                    (SELECT nome FROM clinicas WHERE clinicas.id = {tabela}.clinica_id),
+                    (SELECT nome FROM clinicas_parceiras WHERE clinicas_parceiras.id = {tabela}.clinica_id)
+                    ) WHERE clinica_id IS NOT NULL AND (nome_clinica IS NULL OR TRIM(COALESCE(nome_clinica, '')) = '')""")
+                cur.execute(f"""UPDATE {tabela} SET nome_tutor = (SELECT t.nome FROM pacientes p JOIN tutores t ON t.id = p.tutor_id WHERE p.id = {tabela}.paciente_id)
+                    WHERE paciente_id IS NOT NULL AND (nome_tutor IS NULL OR TRIM(COALESCE(nome_tutor, '')) = '')""")
+            except sqlite3.OperationalError:
+                pass
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro=None, busca_livre=None):
     """Lista exames (laudos) do banco com tutor e clínica (JOIN). Para busca por tutor, clínica ou pet após importação.
     busca_livre: se preenchido, busca o termo em animal, tutor e clínica ao mesmo tempo (OR)."""
     try:
+        _backfill_nomes_laudos()
         conn = sqlite3.connect(str(DB_PATH))
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
