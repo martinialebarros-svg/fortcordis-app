@@ -10232,13 +10232,13 @@ elif menu_principal == "⚙️ Configurações":
                                     map_tutor[int(row["id"])] = novo_id
                             except sqlite3.OperationalError as e:
                                 erros_import.append(("tutores", str(e)))
-                            # 3) Pacientes (usar map_tutor; evita duplicata por tutor_id + nome_key + especie; gerar nome_key se não existir no backup)
+                            # 3) Pacientes (usar map_tutor; evita duplicata por tutor_id + nome_key + especie; SELECT só colunas que existem no backup)
                             try:
                                 cur_b.execute("PRAGMA table_info(pacientes)")
                                 cols_p = [c[1] for c in cur_b.fetchall()]
                                 tem_nome_key_p = "nome_key" in cols_p
                                 tem_created_p = "created_at" in cols_p
-                                sel_p = "SELECT id, tutor_id, nome, nome_key, especie, raca, sexo, nascimento, created_at FROM pacientes" if tem_nome_key_p else ("SELECT id, tutor_id, nome, especie, raca, sexo, nascimento, created_at FROM pacientes" if tem_created_p else "SELECT id, tutor_id, nome, especie, raca, sexo, nascimento FROM pacientes")
+                                sel_p = "SELECT " + ", ".join(cols_p) + " FROM pacientes"
                                 cur_b.execute(sel_p)
                                 for row in cur_b.fetchall():
                                     row = dict(row)
@@ -10275,36 +10275,33 @@ elif menu_principal == "⚙️ Configurações":
                                     map_paciente[int(row["id"])] = novo_id
                             except sqlite3.OperationalError as e:
                                 erros_import.append(("pacientes", str(e)))
-                            # 4) Clinicas parceiras (INSERT OR IGNORE por nome; mapear id para laudos)
+                            # 4) Clinicas parceiras (INSERT OR IGNORE por nome; só colunas que existem no destino)
                             try:
                                 cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='clinicas_parceiras'")
                                 if cur_b.fetchone():
+                                    cur_l.execute("PRAGMA table_info(clinicas_parceiras)")
+                                    dest_cp = [c[1] for c in cur_l.fetchall()]
                                     cur_b.execute("PRAGMA table_info(clinicas_parceiras)")
                                     cols_cp = [c[1] for c in cur_b.fetchall()]
+                                    cols_cp_insert = [c for c in dest_cp if c != "id" and c in cols_cp]
+                                    if not cols_cp_insert:
+                                        cols_cp_insert = [c for c in dest_cp if c != "id"]
                                     cur_b.execute("SELECT * FROM clinicas_parceiras")
                                     for row in cur_b.fetchall():
                                         row_dict = dict(zip(cols_cp, row))
                                         old_id = row_dict.get("id")
                                         nome_cp = row_dict.get("nome")
-                                        cur_l.execute(
-                                            """INSERT OR IGNORE INTO clinicas_parceiras (nome, endereco, bairro, cidade, telefone, whatsapp, email, cnpj, observacoes, ativo, data_cadastro)
-                                               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                                            (
-                                                nome_cp,
-                                                row_dict.get("endereco"),
-                                                row_dict.get("bairro"),
-                                                row_dict.get("cidade"),
-                                                row_dict.get("telefone"),
-                                                row_dict.get("whatsapp"),
-                                                row_dict.get("email"),
-                                                row_dict.get("cnpj"),
-                                                row_dict.get("observacoes"),
-                                                row_dict.get("ativo", 1),
-                                                row_dict.get("data_cadastro"),
-                                            ),
-                                        )
-                                        if cur_l.rowcount:
-                                            total_cp += 1
+                                        vals_cp = [row_dict.get(c) for c in cols_cp_insert]
+                                        placeholders_cp = ", ".join(["?" for _ in cols_cp_insert])
+                                        try:
+                                            cur_l.execute(
+                                                f"INSERT OR IGNORE INTO clinicas_parceiras ({', '.join(cols_cp_insert)}) VALUES ({placeholders_cp})",
+                                                vals_cp,
+                                            )
+                                            if cur_l.rowcount:
+                                                total_cp += 1
+                                        except sqlite3.OperationalError:
+                                            pass
                                         r = cur_l.execute("SELECT id FROM clinicas_parceiras WHERE nome=?", (nome_cp,)).fetchone()
                                         novo_id = (r[0] if isinstance(r, (list, tuple)) else r["id"]) if r else None
                                         if novo_id is not None and old_id is not None:
