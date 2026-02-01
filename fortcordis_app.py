@@ -10815,6 +10815,10 @@ elif menu_principal == "⚙️ Configurações":
                                 st.warning(
                                     "O backup tinha dados mas nada foi inserido. Verifique se o arquivo .db foi gerado pelo exportar_backup.py e se as tabelas existem no backup."
                                 )
+                        except Exception as e:
+                            st.error(f"Erro ao importar: {e}")
+                            with st.expander("Detalhes técnicos do erro (para diagnóstico)"):
+                                st.code(traceback.format_exc(), language="text")
                         finally:
                             try:
                                 if conn_backup is not None:
@@ -10831,10 +10835,6 @@ elif menu_principal == "⚙️ Configurações":
                                     os.remove(tmp_path)
                             except Exception:
                                 pass
-                        except Exception as e:
-                            st.error(f"Erro ao importar: {e}")
-                            with st.expander("Detalhes técnicos do erro (para diagnóstico)"):
-                                st.code(traceback.format_exc(), language="text")
                     except Exception as e:
                         st.error(f"Erro ao processar arquivo: {e}")
                         with st.expander("Detalhes técnicos do erro (para diagnóstico)"):
