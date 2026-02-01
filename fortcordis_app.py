@@ -97,6 +97,13 @@ with col2:
         st.query_params.clear()
         st.rerun()
 
+if st.session_state.get("db_was_recovered"):
+    st.warning(
+        "O banco de dados foi reiniciado devido a um erro anterior (por exemplo, importação interrompida com 502). "
+        "Os dados foram salvos em um arquivo `.corrupted`. Importe o backup novamente em **Configurações > Importar dados** se necessário."
+    )
+    st.session_state.pop("db_was_recovered", None)
+
 st.markdown("---")
 # ============================================================
 
@@ -664,6 +671,35 @@ DB_PATH = PASTA_DB / "fortcordis.db"
 if "database" in sys.modules:
     sys.modules["database"].DB_PATH = DB_PATH
 
+
+def _db_conn_safe():
+    """Abre o banco; se estiver corrompido/travado (ex.: após 502 na importação), reinicia o arquivo para o app voltar a abrir."""
+    import time
+    try:
+        conn = sqlite3.connect(str(DB_PATH), timeout=10)
+        conn.execute("SELECT 1")
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        try:
+            path = Path(DB_PATH)
+            if path.exists():
+                backup = path.parent / (path.stem + ".corrupted." + str(int(time.time())) + path.suffix)
+                path.rename(backup)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(DB_PATH))
+            conn.row_factory = sqlite3.Row
+            if "db_was_recovered" not in st.session_state:
+                st.session_state["db_was_recovered"] = True
+            return conn
+        except Exception:
+            raise
+
+
 def _norm_key(s: str) -> str:
     """Normaliza texto para chave (minúsculo, sem acentos, espaços colapsados)."""
     s = (s or "").strip().lower()
@@ -674,9 +710,7 @@ def _norm_key(s: str) -> str:
 
 @st.cache_resource(show_spinner=False)
 def _db_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return _db_conn_safe()
 
 def _db_init():
     conn = _db_conn()
@@ -10324,7 +10358,11 @@ elif menu_principal == "⚙️ Configurações":
                 if st.button("🔄 Importar agora", key="btn_importar_backup", type="primary"):
                     import tempfile
                     import io
+                    import traceback
                     erros_import = []
+                    tmp_path = None
+                    conn_backup = None
+                    conn_local = None
                     try:
                         bytes_backup = arquivo_backup.read()
                         if not bytes_backup:
@@ -10700,7 +10738,7 @@ elif menu_principal == "⚙️ Configurações":
                                         WHERE paciente_id IS NOT NULL AND (nome_tutor IS NULL OR TRIM(COALESCE(nome_tutor, '')) = '')""")
                                 except sqlite3.OperationalError:
                                     pass
-                            # 6) Laudos da pasta (laudos_arquivos + laudos_arquivos_imagens) — copiar do backup
+                            # 6) Laudos da pasta (laudos_arquivos + laudos_arquivos_imagens) — copiar do backup com commit em lotes
                             cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='laudos_arquivos'")
                             if cur_b.fetchone():
                                 try:
@@ -10709,7 +10747,8 @@ elif menu_principal == "⚙️ Configurações":
                                     cols_sem_id = [c for c in cols_arq if c != "id"]
                                     cur_b.execute("SELECT * FROM laudos_arquivos")
                                     map_laudo_arq = {}
-                                    for row in cur_b.fetchall():
+                                    BATCH_LAUDOS = 50
+                                    for i, row in enumerate(cur_b.fetchall()):
                                         row_d = dict(zip(cols_arq, row))
                                         old_id = row_d.get("id")
                                         vals = [row_d.get(c) for c in cols_sem_id]
@@ -10721,13 +10760,15 @@ elif menu_principal == "⚙️ Configurações":
                                         if old_id is not None:
                                             map_laudo_arq[int(old_id)] = new_id
                                         total_laudos_arq += 1
+                                        if (i + 1) % BATCH_LAUDOS == 0:
+                                            conn_local.commit()
                                     cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='laudos_arquivos_imagens'")
                                     if cur_b.fetchone():
                                         cur_b.execute("PRAGMA table_info(laudos_arquivos_imagens)")
                                         cols_img = [c[1] for c in cur_b.fetchall()]
                                         cols_img_sem_id = [c for c in cols_img if c != "id"]
                                         cur_b.execute("SELECT * FROM laudos_arquivos_imagens")
-                                        for row in cur_b.fetchall():
+                                        for i2, row in enumerate(cur_b.fetchall()):
                                             row_d = dict(zip(cols_img, row))
                                             old_laudo_id = row_d.get("laudo_arquivo_id")
                                             new_laudo_id = map_laudo_arq.get(int(old_laudo_id)) if old_laudo_id is not None else None
@@ -10737,15 +10778,11 @@ elif menu_principal == "⚙️ Configurações":
                                                     f"INSERT INTO laudos_arquivos_imagens ({', '.join(cols_img_sem_id)}) VALUES ({', '.join(['?'] * len(cols_img_sem_id))})",
                                                     vals_img,
                                                 )
+                                            if (i2 + 1) % BATCH_LAUDOS == 0:
+                                                conn_local.commit()
                                 except sqlite3.OperationalError as e:
                                     erros_import.append(("laudos_arquivos", str(e)))
                             conn_local.commit()
-                            conn_backup.close()
-                            conn_local.close()
-                            try:
-                                os.remove(tmp_path)
-                            except Exception:
-                                pass
                             msg_c = f"{total_c + reused_c} clínicas ({total_c} novas, {reused_c} já existentes)" if (total_c or reused_c) else "0 clínicas"
                             msg_t = f"{total_t + reused_t} tutores ({total_t} novos, {reused_t} já existentes)" if (total_t or reused_t) else "0 tutores"
                             msg_arq = f", {total_laudos_arq} exames da pasta (JSON/PDF)" if total_laudos_arq else ""
@@ -10770,14 +10807,30 @@ elif menu_principal == "⚙️ Configurações":
                                 st.warning(
                                     "O backup tinha dados mas nada foi inserido. Verifique se o arquivo .db foi gerado pelo exportar_backup.py e se as tabelas existem no backup."
                                 )
-                        except Exception as e:
-                            st.error(f"Erro ao importar: {e}")
+                        finally:
                             try:
-                                os.remove(tmp_path)
+                                if conn_backup is not None:
+                                    conn_backup.close()
                             except Exception:
                                 pass
+                            try:
+                                if conn_local is not None:
+                                    conn_local.close()
+                            except Exception:
+                                pass
+                            try:
+                                if tmp_path and os.path.exists(tmp_path):
+                                    os.remove(tmp_path)
+                            except Exception:
+                                pass
+                        except Exception as e:
+                            st.error(f"Erro ao importar: {e}")
+                            with st.expander("Detalhes técnicos do erro (para diagnóstico)"):
+                                st.code(traceback.format_exc(), language="text")
                     except Exception as e:
                         st.error(f"Erro ao processar arquivo: {e}")
+                        with st.expander("Detalhes técnicos do erro (para diagnóstico)"):
+                            st.code(traceback.format_exc(), language="text")
 
         # ============================================================================
         # ABA: ASSINATURA/CARIMBO (usada nos laudos)
