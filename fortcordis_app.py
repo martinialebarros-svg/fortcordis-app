@@ -6791,12 +6791,21 @@ elif menu_principal == "🩺 Laudos e Exames":
         if laudos_banco:
             df_banco = pd.DataFrame(laudos_banco)
             df_banco["data"] = df_banco["data"].astype(str)
-            st.dataframe(df_banco[["data", "clinica", "animal", "tutor", "tipo_exame"]], use_container_width=True, hide_index=True)
+            # Deduplicar por data + clinica + animal + tutor + tipo (evita dezenas de repetidos quando backup foi importado várias vezes)
+            colunas_exib = ["data", "clinica", "animal", "tutor", "tipo_exame"]
+            df_uniq = df_banco[colunas_exib].drop_duplicates(keep="first")
+            n_uniq, n_total = len(df_uniq), len(df_banco)
+            st.dataframe(df_uniq, use_container_width=True, hide_index=True)
+            texto_total = f"**{n_uniq}** exame(s) únicos" + (f" (de **{n_total}** no banco — repetidos por importações anteriores; importe o backup **apenas uma vez**)." if n_uniq < n_total else ".")
             st.caption(
-                f"Total: {len(laudos_banco)} exame(s). "
-                "O banco guarda o **caminho** do seu computador (ex.: C:\\...\\Laudos\\arquivo.pdf) para localizar PDF/JSON. "
-                "No sistema online esse caminho não existe — os arquivos ficam só no seu PC; aqui você vê só os dados (data, clínica, animal, tutor, tipo)."
+                f"{texto_total} "
+                "O banco guarda o caminho do seu PC (ex.: C:\\...\\Laudos\\arquivo.pdf); no sistema online os arquivos não existem — aqui você vê só os dados (data, clínica, animal, tutor, tipo)."
             )
+            if df_uniq["clinica"].fillna("").str.strip().eq("").all() and df_uniq["animal"].fillna("").str.strip().eq("").all():
+                st.info(
+                    "Clínica, animal e tutor vazios? Reimporte o backup **uma vez** em Configurações > Importar dados (com o .db atualizado). "
+                    "Assim os vínculos são preenchidos e os nomes aparecem aqui."
+                )
         else:
             if total_banco > 0:
                 st.warning(
