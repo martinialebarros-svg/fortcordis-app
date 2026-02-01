@@ -717,6 +717,31 @@ def _db_init():
             conn.execute(f"ALTER TABLE tutores ADD COLUMN {col} {tipo}")
         except sqlite3.OperationalError:
             pass
+    # Tabela de laudos importados da pasta (JSON/PDF como BLOB) para buscar exames no sistema online
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS laudos_arquivos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_exame TEXT NOT NULL,
+            nome_animal TEXT,
+            nome_tutor TEXT,
+            nome_clinica TEXT,
+            tipo_exame TEXT DEFAULT 'ecocardiograma',
+            nome_base TEXT UNIQUE,
+            conteudo_json BLOB,
+            conteudo_pdf BLOB,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS laudos_arquivos_imagens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            laudo_arquivo_id INTEGER NOT NULL,
+            ordem INTEGER DEFAULT 0,
+            nome_arquivo TEXT,
+            conteudo BLOB,
+            FOREIGN KEY(laudo_arquivo_id) REFERENCES laudos_arquivos(id)
+        )
+    """)
     conn.commit()
 
 def db_upsert_clinica(nome: str):
@@ -1820,6 +1845,78 @@ def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro
         return out
     except Exception:
         return []
+
+
+def listar_laudos_arquivos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro=None, busca_livre=None):
+    """Lista exames da tabela laudos_arquivos (importados da pasta JSON/PDF) para Buscar exames."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='laudos_arquivos'")
+        if not cur.fetchone():
+            conn.close()
+            return []
+        query = """
+            SELECT id, data_exame AS data, nome_clinica AS clinica, nome_animal AS animal,
+                   nome_tutor AS tutor, tipo_exame, nome_base
+            FROM laudos_arquivos WHERE 1=1
+        """
+        params = []
+        if tutor_filtro and str(tutor_filtro).strip():
+            query += " AND UPPER(COALESCE(nome_tutor,'')) LIKE UPPER(?)"
+            params.append(f"%{tutor_filtro.strip()}%")
+        if clinica_filtro and str(clinica_filtro).strip():
+            query += " AND UPPER(COALESCE(nome_clinica,'')) LIKE UPPER(?)"
+            params.append(f"%{clinica_filtro.strip()}%")
+        if animal_filtro and str(animal_filtro).strip():
+            query += " AND UPPER(COALESCE(nome_animal,'')) LIKE UPPER(?)"
+            params.append(f"%{animal_filtro.strip()}%")
+        if busca_livre and str(busca_livre).strip():
+            termo = f"%{busca_livre.strip()}%"
+            query += " AND (UPPER(COALESCE(nome_animal,'')) LIKE UPPER(?) OR UPPER(COALESCE(nome_tutor,'')) LIKE UPPER(?) OR UPPER(COALESCE(nome_clinica,'')) LIKE UPPER(?))"
+            params.extend([termo, termo, termo])
+        query += " ORDER BY data_exame DESC, id DESC"
+        cur.execute(query, params)
+        out = [dict(row) for row in cur.fetchall()]
+        for r in out:
+            r["id_laudo_arquivo"] = r["id"]
+            r["tipo_exame"] = r.get("tipo_exame") or "ecocardiograma"
+        conn.close()
+        return out
+    except Exception:
+        return []
+
+
+def contar_laudos_arquivos_do_banco():
+    """Total de laudos na tabela laudos_arquivos."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM laudos_arquivos")
+        n = cur.fetchone()[0]
+        conn.close()
+        return n
+    except Exception:
+        return 0
+
+
+def obter_laudo_arquivo_por_id(laudo_arquivo_id):
+    """Retorna um dict com conteudo_json, conteudo_pdf, nome_base para download."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, nome_base, conteudo_json, conteudo_pdf FROM laudos_arquivos WHERE id=?",
+            (laudo_arquivo_id,),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return dict(row) if row else None
+    except Exception:
+        return None
+
 
 if 'df_ref' not in st.session_state: st.session_state['df_ref'] = carregar_tabela_referencia_cached()
 if 'df_ref_felinos' not in st.session_state:
@@ -6777,11 +6874,12 @@ elif menu_principal == "🩺 Laudos e Exames":
 
 
     with tab7:
+        _db_init()
         st.header("🔎 Buscar exames arquivados")
-        st.caption("Busque por tutor, clínica ou pet. Exames importados do backup aparecem na seção «Exames no banco».")
+        st.caption("Busque por tutor, clínica ou pet. Exames importados do backup ou da pasta (JSON/PDF) aparecem abaixo.")
 
         # ---------- Exames no banco (importados) — visíveis após restaurar backup ----------
-        st.subheader("📂 Exames no banco (importados)")
+        st.subheader("📂 Exames no banco (importados do backup)")
         st.caption("Laudos que vieram do backup. **Deixe os filtros vazios para ver todos os laudos.** Use os filtros para achar por tutor, clínica ou pet.")
         lb_tutor = st.text_input("Tutor (contém)", key="busca_exame_tutor_db", placeholder="Nome do tutor")
         lb_clinica = st.text_input("Clínica (contém)", key="busca_exame_clinica_db", placeholder="Nome da clínica")
@@ -6820,6 +6918,57 @@ elif menu_principal == "🩺 Laudos e Exames":
                 )
             else:
                 st.info("Nenhum exame no banco. Se importou backup, confira se o .db continha laudos (ecocardiograma, eletro, pressão) e se a importação concluiu com sucesso.")
+
+        # ---------- Exames da pasta importados para o banco (disponíveis no sistema online) ----------
+        st.markdown("---")
+        st.subheader("📂 Exames da pasta (importados para o banco)")
+        st.caption("Laudos que você importou da pasta local (script importar_pasta_laudos_para_banco.py). Aparecem no sistema online após importar o backup.")
+        laudos_arq = listar_laudos_arquivos_do_banco(
+            tutor_filtro=lb_tutor or None,
+            clinica_filtro=lb_clinica or None,
+            animal_filtro=lb_animal or None,
+            busca_livre=lb_livre or None,
+        )
+        n_arq = contar_laudos_arquivos_do_banco()
+        if laudos_arq:
+            df_arq = pd.DataFrame(laudos_arq)
+            df_arq["data"] = df_arq["data"].astype(str)
+            colunas_exib_arq = ["data", "clinica", "animal", "tutor", "tipo_exame"]
+            st.dataframe(df_arq[colunas_exib_arq], use_container_width=True, hide_index=True)
+            st.caption(f"**{len(laudos_arq)}** exame(s) da pasta no banco.")
+            opcoes_arq = [f'{r["data"]} | {r["animal"]} | {r["tutor"]} | {r["clinica"]}' for r in laudos_arq]
+            idx_arq = st.selectbox("Selecione um exame para baixar (JSON/PDF)", range(len(opcoes_arq)), format_func=lambda i: opcoes_arq[i], key="sel_laudo_arquivo")
+            row_arq = laudos_arq[idx_arq]
+            blob_row = obter_laudo_arquivo_por_id(row_arq["id_laudo_arquivo"])
+            if blob_row:
+                cj, cp = st.columns(2)
+                with cj:
+                    if blob_row.get("conteudo_json"):
+                        st.download_button(
+                            "⬇️ Baixar JSON",
+                            data=blob_row["conteudo_json"],
+                            file_name=(blob_row.get("nome_base") or "laudo") + ".json",
+                            mime="application/json",
+                            key="dl_json_arquivo",
+                        )
+                    else:
+                        st.caption("JSON não armazenado.")
+                with cp:
+                    if blob_row.get("conteudo_pdf"):
+                        st.download_button(
+                            "⬇️ Baixar PDF",
+                            data=blob_row["conteudo_pdf"],
+                            file_name=(blob_row.get("nome_base") or "laudo") + ".pdf",
+                            mime="application/pdf",
+                            key="dl_pdf_arquivo",
+                        )
+                    else:
+                        st.caption("PDF não armazenado.")
+        else:
+            if n_arq > 0:
+                st.warning("Nenhum exame com esses filtros. Limpe a busca para ver todos.")
+            else:
+                st.info("Nenhum exame da pasta no banco. Execute o script **importar_pasta_laudos_para_banco.py** na pasta do projeto (apontando para a pasta Laudos) e depois importe o backup no sistema online.")
 
         st.markdown("---")
         st.subheader("📁 Exames na pasta (arquivos JSON/PDF)")
@@ -10199,7 +10348,11 @@ elif menu_principal == "⚙️ Configurações":
                             n_p_b = _count_backup("pacientes")
                             n_l_b = _count_backup("laudos_ecocardiograma") + _count_backup("laudos_eletrocardiograma") + _count_backup("laudos_pressao_arterial")
                             n_cp_b = _count_backup("clinicas_parceiras")
-                            st.info(f"📂 Conteúdo do backup: {n_c_b} clínicas, {n_t_b} tutores, {n_p_b} pacientes, {n_l_b} laudos, {n_cp_b} clínicas parceiras.")
+                            n_laudos_arq_b = _count_backup("laudos_arquivos")
+                            st.info(
+                                f"📂 Conteúdo do backup: {n_c_b} clínicas, {n_t_b} tutores, {n_p_b} pacientes, {n_l_b} laudos, "
+                                f"{n_cp_b} clínicas parceiras" + (f", **{n_laudos_arq_b} exames da pasta** (JSON/PDF)." if n_laudos_arq_b else ".")
+                            )
                             # Usar apenas conexão nova (não _db_conn em cache) para evitar "Cannot operate on a closed database"
                             conn_local = sqlite3.connect(str(DB_PATH))
                             cur_l = conn_local.cursor()
@@ -10268,6 +10421,30 @@ elif menu_principal == "⚙️ Configurações":
                                     data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
                                 )
                             """)
+                            cur_l.execute("""
+                                CREATE TABLE IF NOT EXISTS laudos_arquivos (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    data_exame TEXT NOT NULL,
+                                    nome_animal TEXT,
+                                    nome_tutor TEXT,
+                                    nome_clinica TEXT,
+                                    tipo_exame TEXT DEFAULT 'ecocardiograma',
+                                    nome_base TEXT UNIQUE,
+                                    conteudo_json BLOB,
+                                    conteudo_pdf BLOB,
+                                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                                )
+                            """)
+                            cur_l.execute("""
+                                CREATE TABLE IF NOT EXISTS laudos_arquivos_imagens (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    laudo_arquivo_id INTEGER NOT NULL,
+                                    ordem INTEGER DEFAULT 0,
+                                    nome_arquivo TEXT,
+                                    conteudo BLOB,
+                                    FOREIGN KEY(laudo_arquivo_id) REFERENCES laudos_arquivos(id)
+                                )
+                            """)
                             conn_local.commit()
                             if limpar_laudos_antes:
                                 for _t in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
@@ -10280,7 +10457,7 @@ elif menu_principal == "⚙️ Configurações":
                             map_clinica_parceiras = {}
                             map_tutor = {}
                             map_paciente = {}
-                            total_c, total_t, total_p, total_l, total_cp = 0, 0, 0, 0, 0
+                            total_c, total_t, total_p, total_l, total_cp, total_laudos_arq = 0, 0, 0, 0, 0, 0
                             reused_c, reused_t = 0, 0
                             # 1) Clinicas (tabela simples) — evita duplicata por nome_key; SELECT só colunas que existem no backup
                             try:
@@ -10435,7 +10612,10 @@ elif menu_principal == "⚙️ Configurações":
                             except Exception as e:
                                 erros_import.append(("clinicas_parceiras", f"{type(e).__name__}: {e}"))
                             # 5) Laudos (mapear paciente_id e clinica_id; só inserir colunas que existem no destino)
-                            for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+                            # Só processar tabelas de laudos que existem no backup (evitar "no such table")
+                            cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('laudos_ecocardiograma','laudos_eletrocardiograma','laudos_pressao_arterial')")
+                            tabelas_laudos_no_backup = [r[0] for r in cur_b.fetchall()]
+                            for tabela in tabelas_laudos_no_backup:
                                 try:
                                     cur_l.execute(f"PRAGMA table_info({tabela})")
                                     colunas_destino = [c[1] for c in cur_l.fetchall()]
@@ -10520,6 +10700,45 @@ elif menu_principal == "⚙️ Configurações":
                                         WHERE paciente_id IS NOT NULL AND (nome_tutor IS NULL OR TRIM(COALESCE(nome_tutor, '')) = '')""")
                                 except sqlite3.OperationalError:
                                     pass
+                            # 6) Laudos da pasta (laudos_arquivos + laudos_arquivos_imagens) — copiar do backup
+                            cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='laudos_arquivos'")
+                            if cur_b.fetchone():
+                                try:
+                                    cur_b.execute("PRAGMA table_info(laudos_arquivos)")
+                                    cols_arq = [c[1] for c in cur_b.fetchall()]
+                                    cols_sem_id = [c for c in cols_arq if c != "id"]
+                                    cur_b.execute("SELECT * FROM laudos_arquivos")
+                                    map_laudo_arq = {}
+                                    for row in cur_b.fetchall():
+                                        row_d = dict(zip(cols_arq, row))
+                                        old_id = row_d.get("id")
+                                        vals = [row_d.get(c) for c in cols_sem_id]
+                                        cur_l.execute(
+                                            f"INSERT INTO laudos_arquivos ({', '.join(cols_sem_id)}) VALUES ({', '.join(['?'] * len(cols_sem_id))})",
+                                            vals,
+                                        )
+                                        new_id = cur_l.lastrowid
+                                        if old_id is not None:
+                                            map_laudo_arq[int(old_id)] = new_id
+                                        total_laudos_arq += 1
+                                    cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='laudos_arquivos_imagens'")
+                                    if cur_b.fetchone():
+                                        cur_b.execute("PRAGMA table_info(laudos_arquivos_imagens)")
+                                        cols_img = [c[1] for c in cur_b.fetchall()]
+                                        cols_img_sem_id = [c for c in cols_img if c != "id"]
+                                        cur_b.execute("SELECT * FROM laudos_arquivos_imagens")
+                                        for row in cur_b.fetchall():
+                                            row_d = dict(zip(cols_img, row))
+                                            old_laudo_id = row_d.get("laudo_arquivo_id")
+                                            new_laudo_id = map_laudo_arq.get(int(old_laudo_id)) if old_laudo_id is not None else None
+                                            if new_laudo_id is not None:
+                                                vals_img = [new_laudo_id if c == "laudo_arquivo_id" else row_d.get(c) for c in cols_img_sem_id]
+                                                cur_l.execute(
+                                                    f"INSERT INTO laudos_arquivos_imagens ({', '.join(cols_img_sem_id)}) VALUES ({', '.join(['?'] * len(cols_img_sem_id))})",
+                                                    vals_img,
+                                                )
+                                except sqlite3.OperationalError as e:
+                                    erros_import.append(("laudos_arquivos", str(e)))
                             conn_local.commit()
                             conn_backup.close()
                             conn_local.close()
@@ -10529,9 +10748,10 @@ elif menu_principal == "⚙️ Configurações":
                                 pass
                             msg_c = f"{total_c + reused_c} clínicas ({total_c} novas, {reused_c} já existentes)" if (total_c or reused_c) else "0 clínicas"
                             msg_t = f"{total_t + reused_t} tutores ({total_t} novos, {reused_t} já existentes)" if (total_t or reused_t) else "0 tutores"
+                            msg_arq = f", {total_laudos_arq} exames da pasta (JSON/PDF)" if total_laudos_arq else ""
                             st.success(
                                 f"✅ Importação concluída: {msg_c}, {msg_t}, {total_p} pacientes, "
-                                f"{total_l} laudos, {total_cp} clínicas parceiras."
+                                f"{total_l} laudos, {total_cp} clínicas parceiras{msg_arq}."
                             )
                             if erros_import:
                                 st.error("Alguns passos falharam: " + " | ".join(f"{k}: {v}" for k, v in erros_import))

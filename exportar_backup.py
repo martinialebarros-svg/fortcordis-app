@@ -37,6 +37,8 @@ TABELAS_EXPORTAR = [
     "laudos_eletrocardiograma",
     "laudos_pressao_arterial",
     "clinicas_parceiras",
+    "laudos_arquivos",
+    "laudos_arquivos_imagens",
 ]
 
 
