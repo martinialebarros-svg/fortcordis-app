@@ -76,6 +76,26 @@ No **.gitignore** inclua, por exemplo:
 - `.streamlit/secrets.toml`
 - `*.pyc`
 
+### 1.6 Restaurar dados após o deploy (clínicas, tutores, pacientes, laudos)
+
+Depois do deploy o banco online fica vazio. Para puxar os dados que você já tinha no computador:
+
+1. **No seu computador** (na pasta do projeto, onde está o `fortcordis.db` com os dados):
+   ```bash
+   python exportar_backup.py
+   ```
+   Isso gera um arquivo `backup_fortcordis_AAAAAMMDD_HHMM.db` na mesma pasta.  
+   Para outro nome: `python exportar_backup.py --saida meu_backup.db`
+
+2. **No sistema online** (Streamlit):
+   - Faça login como **administrador**.
+   - Vá em **Configurações** → aba **"Importar dados"**.
+   - Envie o arquivo `.db` de backup e clique em **"Importar agora"**.
+
+O sistema importa: clínicas, tutores, pacientes, laudos (ecocardiograma, eletrocardiograma, pressão arterial) e clínicas parceiras. Se importar de novo, clínicas e tutores não duplicam (são identificados pelo nome).
+
+**Nota:** O script `exportar_backup.py` deve estar na pasta do projeto e o `fortcordis.db` local deve ser o que tinha os cadastros e laudos. Pode incluir `exportar_backup.py` no repositório para uso local.
+
 ---
 
 ## 2. Integração com Google Calendar (próxima etapa)

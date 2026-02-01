@@ -336,6 +336,7 @@ def usuario_tem_permissao(usuario_id: int, modulo: str, acao: str) -> bool:
 def obter_permissoes_usuario(usuario_id: int) -> Dict[str, List[str]]:
     """
     Retorna todas as permissões de um usuário organizadas por módulo.
+    Se as tabelas de permissões não existirem (ex.: primeiro deploy), cria e tenta de novo.
     
     Args:
         usuario_id: ID do usuário
@@ -343,49 +344,54 @@ def obter_permissoes_usuario(usuario_id: int) -> Dict[str, List[str]]:
     Returns:
         Dicionário {modulo: [acoes]}
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.cursor()
-    
-    # Permissões dos papéis
-    cursor.execute(
-        """
-        SELECT DISTINCT p.modulo, p.acao
-        FROM usuario_papel up
-        JOIN papel_permissao pp ON up.papel_id = pp.papel_id
-        JOIN permissoes p ON pp.permissao_id = p.id
-        WHERE up.usuario_id = ?
-        """,
-        (usuario_id,)
-    )
-    
-    permissoes = {}
-    for modulo, acao in cursor.fetchall():
-        if modulo not in permissoes:
-            permissoes[modulo] = []
-        permissoes[modulo].append(acao)
-    
-    # Ajusta com permissões customizadas
-    cursor.execute(
-        """
-        SELECT p.modulo, p.acao, up.concedida
-        FROM usuario_permissao up
-        JOIN permissoes p ON up.permissao_id = p.id
-        WHERE up.usuario_id = ?
-        """,
-        (usuario_id,)
-    )
-    
-    for modulo, acao, concedida in cursor.fetchall():
-        if modulo not in permissoes:
-            permissoes[modulo] = []
-        
-        if concedida and acao not in permissoes[modulo]:
+    def _buscar():
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT DISTINCT p.modulo, p.acao
+            FROM usuario_papel up
+            JOIN papel_permissao pp ON up.papel_id = pp.papel_id
+            JOIN permissoes p ON pp.permissao_id = p.id
+            WHERE up.usuario_id = ?
+            """,
+            (usuario_id,)
+        )
+        permissoes = {}
+        for modulo, acao in cursor.fetchall():
+            if modulo not in permissoes:
+                permissoes[modulo] = []
             permissoes[modulo].append(acao)
-        elif not concedida and acao in permissoes[modulo]:
-            permissoes[modulo].remove(acao)
-    
-    conn.close()
-    return permissoes
+        cursor.execute(
+            """
+            SELECT p.modulo, p.acao, up.concedida
+            FROM usuario_permissao up
+            JOIN permissoes p ON up.permissao_id = p.id
+            WHERE up.usuario_id = ?
+            """,
+            (usuario_id,)
+        )
+        for modulo, acao, concedida in cursor.fetchall():
+            if modulo not in permissoes:
+                permissoes[modulo] = []
+            if concedida and acao not in permissoes[modulo]:
+                permissoes[modulo].append(acao)
+            elif not concedida and acao in permissoes[modulo]:
+                permissoes[modulo].remove(acao)
+        conn.close()
+        return permissoes
+
+    try:
+        return _buscar()
+    except sqlite3.OperationalError:
+        # Tabelas de permissões podem não existir no primeiro deploy; cria e tenta de novo
+        try:
+            inicializar_tabelas_permissoes()
+            inserir_permissoes_padrao()
+            associar_permissoes_papeis()
+            return _buscar()
+        except Exception:
+            return {}
 
 
 def usuario_tem_papel(usuario_id: int, papel: str) -> bool:

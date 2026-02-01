@@ -10,6 +10,17 @@ Write-Host "  Fort Cordis - Deploy no Streamlit Cloud" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
+# Git precisa de nome e email (so uma vez no PC)
+$gitUser = git config --global user.email 2>$null
+if (-not $gitUser) {
+    Write-Host "Configure o Git (so uma vez):" -ForegroundColor Yellow
+    Write-Host '  git config --global user.email "seu@email.com"' -ForegroundColor Cyan
+    Write-Host '  git config --global user.name "Seu Nome"' -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Depois execute este script de novo: .\fazer_deploy.ps1" -ForegroundColor White
+    exit 1
+}
+
 # 1. Adicionar arquivos (respeitando .gitignore)
 Write-Host "[1/4] Adicionando arquivos ao Git..." -ForegroundColor Yellow
 git add -A

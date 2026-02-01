@@ -941,8 +941,27 @@ def mostrar_tela_login():
                 elif senha != senha2:
                     st.error("As senhas não coincidem.")
                 else:
-                    ok, msg = criar_usuario(nome=nome.strip(), email=email.strip().lower(), senha=senha, papel="admin")
+                    email_limpo = email.strip().lower()
+                    ok, msg = criar_usuario(nome=nome.strip(), email=email_limpo, senha=senha, papel="admin")
                     if ok:
+                        # Login automático após criar conta (evita "E-mail ou senha incorretos" no deploy/rerun)
+                        try:
+                            conn = sqlite3.connect(str(DB_PATH))
+                            cur = conn.cursor()
+                            cur.execute("SELECT id, nome FROM usuarios WHERE email = ? AND ativo = 1", (email_limpo,))
+                            row = cur.fetchone()
+                            conn.close()
+                            if row:
+                                usuario_id, nome_user = row
+                                st.session_state["autenticado"] = True
+                                st.session_state["usuario_id"] = usuario_id
+                                st.session_state["usuario_nome"] = nome_user
+                                st.session_state["usuario_email"] = email_limpo
+                                st.session_state["permissoes"] = carregar_permissoes_usuario(usuario_id)
+                                st.success("✅ Conta criada! Entrando no sistema...")
+                                st.rerun()
+                        except Exception:
+                            pass
                         st.success(msg + " Faça login abaixo.")
                         st.rerun()
                     else:
@@ -1012,19 +1031,20 @@ def mostrar_tela_login():
         try:
             conn = sqlite3.connect(str(DB_PATH))
             cursor = conn.cursor()
-            
+            # Busca com e-mail em minúsculas (igual ao cadastro) para não falhar por maiúsculas
+            email_busca = email.strip().lower()
             cursor.execute("""
                 SELECT id, nome, senha_hash
                 FROM usuarios
                 WHERE email = ? AND ativo = 1
-            """, (email,))
+            """, (email_busca,))
             
             resultado = cursor.fetchone()
             
             if resultado:
                 usuario_id, nome, senha_hash = resultado
-                
-                if bcrypt.checkpw(senha.encode('utf-8'), senha_hash.encode('utf-8')):
+                hash_bytes = senha_hash.encode('utf-8') if isinstance(senha_hash, str) else senha_hash
+                if bcrypt.checkpw(senha.encode('utf-8'), hash_bytes):
                     
                     cursor.execute("""
                         UPDATE usuarios
