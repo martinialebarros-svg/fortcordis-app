@@ -87,7 +87,15 @@ def inicializar_tabelas_auth():
             FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
         )
     """)
-    
+    # Token de login único (para entrar após criar conta no deploy, quando session_state pode se perder)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS login_tokens (
+            token TEXT PRIMARY KEY,
+            usuario_id INTEGER NOT NULL,
+            expira_em TEXT NOT NULL,
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+        )
+    """)
     conn.commit()
     conn.close()
     print("✅ Tabelas de autenticação criadas com sucesso!")
@@ -884,6 +892,54 @@ def mostrar_tela_login():
     """Tela de login com sessão persistente via arquivo"""
     
     limpar_tokens_expirados()
+
+    # Login por token na URL (após criar primeiro usuário no deploy, quando session_state pode se perder)
+    try:
+        q = getattr(st, "query_params", None)
+        if q is not None:
+            token_url = q.get("login_token")
+            if isinstance(token_url, list):
+                token_url = token_url[0] if token_url else None
+            if token_url:
+                conn = sqlite3.connect(str(DB_PATH))
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT usuario_id FROM login_tokens WHERE token = ? AND datetime(expira_em) > datetime('now')",
+                    (token_url,)
+                )
+                row = cur.fetchone()
+                if row:
+                    usuario_id = row[0]
+                    cur.execute("SELECT id, nome, email FROM usuarios WHERE id = ? AND ativo = 1", (usuario_id,))
+                    u = cur.fetchone()
+                    cur.execute("DELETE FROM login_tokens WHERE token = ?", (token_url,))
+                    conn.commit()
+                    conn.close()
+                    if u:
+                        try:
+                            perms = carregar_permissoes_usuario(u[0])
+                        except Exception:
+                            perms = []
+                        st.session_state["autenticado"] = True
+                        st.session_state["usuario_id"] = u[0]
+                        st.session_state["usuario_nome"] = u[1]
+                        st.session_state["usuario_email"] = u[2]
+                        st.session_state["permissoes"] = perms
+                        try:
+                            params = {k: v for k, v in q.items() if k != "login_token"}
+                            if hasattr(q, "from_dict"):
+                                q.from_dict(params)
+                            elif hasattr(q, "clear"):
+                                q.clear()
+                                for k, v in params.items():
+                                    q[k] = v
+                        except Exception:
+                            pass
+                        st.rerun()
+                else:
+                    conn.close()
+    except Exception:
+        pass
     
     # Garante que tabelas e papéis existem (primeira vez / deploy novo)
     try:
@@ -934,7 +990,7 @@ def mostrar_tela_login():
                     email_limpo = email.strip().lower()
                     ok, msg, usuario_id, nome_user = criar_usuario(nome=nome.strip(), email=email_limpo, senha=senha, papel="admin")
                     if ok and usuario_id is not None:
-                        # Login automático na mesma execução (sem st.rerun = session_state não se perde no deploy)
+                        # Login automático: sessão + token na URL (token garante login mesmo se rerun cair em outro worker no Cloud)
                         try:
                             perms = carregar_permissoes_usuario(usuario_id)
                         except Exception:
@@ -944,8 +1000,21 @@ def mostrar_tela_login():
                         st.session_state["usuario_nome"] = nome_user or nome.strip()
                         st.session_state["usuario_email"] = email_limpo
                         st.session_state["permissoes"] = perms
+                        token = secrets.token_urlsafe(32)
+                        try:
+                            conn = sqlite3.connect(str(DB_PATH))
+                            cur = conn.cursor()
+                            expira = (datetime.now() + timedelta(minutes=5)).isoformat()
+                            cur.execute("INSERT INTO login_tokens (token, usuario_id, expira_em) VALUES (?, ?, ?)", (token, usuario_id, expira))
+                            conn.commit()
+                            conn.close()
+                            q = getattr(st, "query_params", None)
+                            if q is not None:
+                                st.query_params["login_token"] = token
+                        except Exception:
+                            pass
                         st.success("✅ Conta criada! Entrando no sistema...")
-                        return True  # Entra direto, sem rerun (evita perder session em outro worker)
+                        st.rerun()
                     elif ok:
                         st.success(msg + " Faça login abaixo.")
                         st.rerun()
