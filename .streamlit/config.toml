@@ -1,0 +1,20 @@
+# Fort Cordis - Configuração do Streamlit
+# Design: tema limpo e profissional (saúde/cardiologia)
+
+[runner]
+magicEnabled = false
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+# Paleta suave: azul escuro (confiança/saúde) e tons neutros
+primaryColor = "#2c5282"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f7fafc"
+textColor = "#2d3748"
+font = "sans serif"
+
+[server]
+# Melhor experiência em telas grandes
+headless = true

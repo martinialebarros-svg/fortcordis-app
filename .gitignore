@@ -1,0 +1,28 @@
+# Banco de dados (não subir para o repositório)
+fortcordis.db
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+
+# Streamlit secrets (nunca commitar)
+.streamlit/secrets.toml
+
+# Dados locais do usuário (pasta FortCordis em home)
+# (opcional – descomente se quiser ignorar algo da pasta do projeto que espelhe isso)
+# FortCordis/
+
+# IDE / OS
+.idea/
+.vscode/
+.claude/
+*.swp
+.DS_Store
+Thumbs.db
