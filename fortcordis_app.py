@@ -3522,8 +3522,13 @@ if uploaded_xml:
     # Só reprocessa quando o XML (Extensible Markup Language) muda
     if st.session_state.get('_xml_hash') != xml_hash:
         st.session_state['_xml_hash'] = xml_hash
-        try: soup = BeautifulSoup(content, 'xml')
-        except: soup = BeautifulSoup(content, 'lxml')
+        try:
+            soup = BeautifulSoup(content, 'xml')
+        except Exception:
+            try:
+                soup = BeautifulSoup(content, 'lxml')
+            except Exception:
+                soup = BeautifulSoup(content, 'html.parser')
         try:
             raw_last = soup.find('lastName').text if soup.find('lastName') else ""
             raw_first = soup.find('firstName').text if soup.find('firstName') else ""
