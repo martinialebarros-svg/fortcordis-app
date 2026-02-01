@@ -311,7 +311,6 @@ from database import (
     listar_financeiro_pendentes,
     garantir_colunas_financeiro,
     criar_os_ao_marcar_realizado,
-    DB_PATH
 )
 
 from integrations import (
