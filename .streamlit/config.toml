@@ -18,5 +18,5 @@ font = "sans serif"
 [server]
 # Melhor experiência em telas grandes
 headless = true
-# Limite de upload (MB) — backup com laudos em BLOB pode passar de 200MB
-maxUploadSize = 500
+# Limite de upload (MB) — backup com laudos em BLOB pode passar de 500MB
+maxUploadSize = 1000
