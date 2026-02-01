@@ -15,9 +15,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Tuple
 import streamlit as st
+import os
 
-# Caminho do banco de dados
-DB_PATH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
+# Caminho do banco: pasta do projeto (funciona no Streamlit Cloud) ou variável de ambiente
+if os.environ.get("FORTCORDIS_DB_PATH"):
+    DB_PATH = Path(os.environ["FORTCORDIS_DB_PATH"])
+else:
+    _root = Path(__file__).resolve().parent.parent
+    DB_PATH = _root / "fortcordis.db"
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def inicializar_tabelas_auth():
