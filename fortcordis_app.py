@@ -3824,6 +3824,21 @@ if uploaded_xml:
 # Inicializa banco de dados
 inicializar_banco()
 
+# Garante tabelas de auth e RBAC para Configurações (evita OperationalError no deploy)
+try:
+    from auth import inicializar_tabelas_auth, inserir_papeis_padrao
+    inicializar_tabelas_auth()
+    inserir_papeis_padrao()
+except Exception:
+    pass
+try:
+    from rbac import inicializar_tabelas_permissoes, inserir_permissoes_padrao, associar_permissoes_papeis
+    inicializar_tabelas_permissoes()
+    inserir_permissoes_padrao()
+    associar_permissoes_papeis()
+except Exception:
+    pass
+
 DADOS_DEFAULT = {
     "Ao": 0.0, "LA": 0.0, "LA_Ao": 0.0,
     "IVSd": 0.0, "LVIDd": 0.0, "LVPWd": 0.0,
