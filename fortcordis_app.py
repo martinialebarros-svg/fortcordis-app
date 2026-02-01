@@ -10286,6 +10286,25 @@ elif menu_principal == "⚙️ Configurações":
                                             pass
                                 except sqlite3.OperationalError:
                                     pass
+                            # Preencher nome_paciente, nome_clinica e nome_tutor quando vazios (a partir das tabelas vinculadas)
+                            for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+                                try:
+                                    cur_l.execute(f"PRAGMA table_info({tabela})")
+                                    cols_dest = [r[1] for r in cur_l.fetchall()]
+                                    if "nome_clinica" not in cols_dest:
+                                        cur_l.execute(f"ALTER TABLE {tabela} ADD COLUMN nome_clinica TEXT")
+                                    if "nome_tutor" not in cols_dest:
+                                        cur_l.execute(f"ALTER TABLE {tabela} ADD COLUMN nome_tutor TEXT")
+                                    cur_l.execute(f"""UPDATE {tabela} SET nome_paciente = (SELECT nome FROM pacientes WHERE pacientes.id = {tabela}.paciente_id)
+                                        WHERE (nome_paciente IS NULL OR TRIM(COALESCE(nome_paciente, '')) = '') AND paciente_id IS NOT NULL""")
+                                    cur_l.execute(f"""UPDATE {tabela} SET nome_clinica = COALESCE(
+                                        (SELECT nome FROM clinicas WHERE clinicas.id = {tabela}.clinica_id),
+                                        (SELECT nome FROM clinicas_parceiras WHERE clinicas_parceiras.id = {tabela}.clinica_id)
+                                        ) WHERE clinica_id IS NOT NULL AND (nome_clinica IS NULL OR TRIM(COALESCE(nome_clinica, '')) = '')""")
+                                    cur_l.execute(f"""UPDATE {tabela} SET nome_tutor = (SELECT t.nome FROM pacientes p JOIN tutores t ON t.id = p.tutor_id WHERE p.id = {tabela}.paciente_id)
+                                        WHERE paciente_id IS NOT NULL AND (nome_tutor IS NULL OR TRIM(COALESCE(nome_tutor, '')) = '')""")
+                                except sqlite3.OperationalError:
+                                    pass
                             conn_local.commit()
                             conn_backup.close()
                             conn_local.close()
