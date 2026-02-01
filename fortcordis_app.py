@@ -10829,6 +10829,14 @@ elif menu_principal == "⚙️ Configurações":
                                 f"✅ Importação concluída: {msg_c}, {msg_t}, {total_p} pacientes, "
                                 f"{total_l} laudos, {total_cp} clínicas parceiras{msg_arq}."
                             )
+                            try:
+                                _db_conn.clear()
+                            except Exception:
+                                pass
+                            st.info(
+                                "Se a página travar ou aparecer erro após a importação, **recarregue (F5)** e faça login de novo. "
+                                "Os dados já foram salvos no banco."
+                            )
                             if erros_import:
                                 st.error("Alguns passos falharam: " + " | ".join(f"{k}: {v}" for k, v in erros_import))
                             if (n_p_b > 0 and total_p == 0) or (n_cp_b > 0 and total_cp == 0):
