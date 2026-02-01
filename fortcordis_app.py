@@ -1691,6 +1691,24 @@ def listar_registros_arquivados_cached(pasta_str: str):
     return registros
 
 
+def contar_laudos_do_banco():
+    """Retorna o total de laudos em todas as tabelas (sem filtros). Usado para mensagem quando filtros retornam 0."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        cur = conn.cursor()
+        total = 0
+        for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM {tabela}")
+                total += cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                pass
+        conn.close()
+        return total
+    except Exception:
+        return 0
+
+
 def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro=None, busca_livre=None):
     """Lista exames (laudos) do banco com tutor e clínica (JOIN). Para busca por tutor, clínica ou pet após importação.
     busca_livre: se preenchido, busca o termo em animal, tutor e clínica ao mesmo tempo (OR)."""
@@ -6729,17 +6747,18 @@ elif menu_principal == "🩺 Laudos e Exames":
 
         # ---------- Exames no banco (importados) — visíveis após restaurar backup ----------
         st.subheader("📂 Exames no banco (importados)")
-        st.caption("Laudos que vieram do backup (clínicas, tutores, pacientes e laudos). Use os filtros para achar por tutor, clínica ou pet.")
+        st.caption("Laudos que vieram do backup. **Deixe os filtros vazios para ver todos os laudos.** Use os filtros para achar por tutor, clínica ou pet.")
         lb_tutor = st.text_input("Tutor (contém)", key="busca_exame_tutor_db", placeholder="Nome do tutor")
         lb_clinica = st.text_input("Clínica (contém)", key="busca_exame_clinica_db", placeholder="Nome da clínica")
         lb_animal = st.text_input("Animal / pet (contém)", key="busca_exame_animal_db", placeholder="Nome do animal")
-        lb_livre = st.text_input("🔍 Busca livre (tutor, clínica ou pet)", key="busca_exame_livre_db", placeholder="Ex.: Pipoca — busca em todos os campos acima")
+        lb_livre = st.text_input("🔍 Busca livre (tutor, clínica ou pet)", key="busca_exame_livre_db", placeholder="Ex.: Pipoca — deixe vazio para ver todos")
         laudos_banco = listar_laudos_do_banco(
             tutor_filtro=lb_tutor or None,
             clinica_filtro=lb_clinica or None,
             animal_filtro=lb_animal or None,
             busca_livre=lb_livre or None,
         )
+        total_banco = contar_laudos_do_banco()
         if laudos_banco:
             df_banco = pd.DataFrame(laudos_banco)
             df_banco["data"] = df_banco["data"].astype(str)
@@ -6750,7 +6769,13 @@ elif menu_principal == "🩺 Laudos e Exames":
                 "No sistema online esse caminho não existe — os arquivos ficam só no seu PC; aqui você vê só os dados (data, clínica, animal, tutor, tipo)."
             )
         else:
-            st.info("Nenhum exame no banco com esses filtros. Use a **Busca livre** acima (ex.: nome do pet) para buscar em tutor, clínica e pet ao mesmo tempo. Se importou backup, confira se o .db continha laudos (ecocardiograma, eletro, pressão).")
+            if total_banco > 0:
+                st.warning(
+                    f"Nenhum exame **com esses filtros**. Há **{total_banco}** laudo(s) no banco. "
+                    "Limpe a Busca livre e os outros filtros para ver todos."
+                )
+            else:
+                st.info("Nenhum exame no banco. Se importou backup, confira se o .db continha laudos (ecocardiograma, eletro, pressão) e se a importação concluiu com sucesso.")
 
         st.markdown("---")
         st.subheader("📁 Exames na pasta (arquivos JSON/PDF)")
