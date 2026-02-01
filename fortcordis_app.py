@@ -17,6 +17,11 @@ import unicodedata
 import secrets
 
 # ============================================================
+# VERSÃO DO DEPLOY (atualize ao fazer push para conferir no app)
+# ============================================================
+VERSAO_DEPLOY = "2026-02-01"  # Altere para a data de hoje ao fazer commit/push
+
+# ============================================================
 # CONFIGURAÇÃO DA PÁGINA E DESIGN (primeiro comando Streamlit)
 # ============================================================
 st.set_page_config(
@@ -3148,6 +3153,7 @@ menu_principal = st.sidebar.radio(
 )
 st.sidebar.markdown("---")
 st.sidebar.caption("Versão 2.0 — Sistema Integrado")
+st.sidebar.caption(f"Deploy: {VERSAO_DEPLOY}")
 
 # --- Sidebar: Suspeita (dinâmica) ---
 # --- helpers: quebrar "Patologia (Grau)" ---
@@ -10455,21 +10461,21 @@ elif menu_principal == "⚙️ Configurações":
                                         novo_clinica_id = (map_clinica_parceiras.get(old_clinica_id) or map_clinica.get(old_clinica_id)) if old_clinica_id is not None else None
                                         row_d["paciente_id"] = novo_paciente_id
                                         row_d["clinica_id"] = novo_clinica_id
-                                        # Sempre preencher nomes a partir do backup (para exibir clínica/animal/tutor mesmo quando map está vazio)
+                                        # Preencher nomes a partir do backup para clínica/animal/tutor aparecerem na tabela
                                         if old_paciente_id is not None:
                                             try:
                                                 r_bp = cur_b.execute("SELECT nome FROM pacientes WHERE id=?", (old_paciente_id,)).fetchone()
                                                 if r_bp:
-                                                    row_d["nome_paciente"] = r_bp[0] if isinstance(r_bp, (list, tuple)) else r_bp["nome"]
+                                                    row_d["nome_paciente"] = (r_bp[0] if isinstance(r_bp, (list, tuple)) else r_bp["nome"]) or ""
                                             except Exception:
                                                 pass
                                         if old_clinica_id is not None:
                                             try:
-                                                r_bc = cur_b.execute("SELECT nome FROM clinicas_parceiras WHERE id=?", (old_clinica_id,)).fetchone()
+                                                r_bc = cur_b.execute("SELECT nome FROM clinicas WHERE id=?", (old_clinica_id,)).fetchone()
                                                 if not r_bc:
-                                                    r_bc = cur_b.execute("SELECT nome FROM clinicas WHERE id=?", (old_clinica_id,)).fetchone()
+                                                    r_bc = cur_b.execute("SELECT nome FROM clinicas_parceiras WHERE id=?", (old_clinica_id,)).fetchone()
                                                 if r_bc:
-                                                    row_d["nome_clinica"] = r_bc[0] if isinstance(r_bc, (list, tuple)) else r_bc["nome"]
+                                                    row_d["nome_clinica"] = (r_bc[0] if isinstance(r_bc, (list, tuple)) else r_bc["nome"]) or ""
                                             except Exception:
                                                 pass
                                         if old_paciente_id is not None:
@@ -10479,7 +10485,7 @@ elif menu_principal == "⚙️ Configurações":
                                                     (old_paciente_id,),
                                                 ).fetchone()
                                                 if r_bt:
-                                                    row_d["nome_tutor"] = r_bt[0] if isinstance(r_bt, (list, tuple)) else r_bt["nome"]
+                                                    row_d["nome_tutor"] = (r_bt[0] if isinstance(r_bt, (list, tuple)) else r_bt["nome"]) or ""
                                             except Exception:
                                                 pass
                                         vals = []
