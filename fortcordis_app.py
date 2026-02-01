@@ -98,10 +98,10 @@ st.markdown("---")
 
 def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
     """Salva o laudo no banco de dados - VERSÃO FINAL AJUSTADA"""
-    DB_PATH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
-    
+    # Usar pasta do projeto (funciona no Streamlit Cloud)
+    _db = Path(__file__).resolve().parent / "fortcordis.db"
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = sqlite3.connect(str(_db))
         cursor = conn.cursor()
         
         tabelas = {
@@ -194,10 +194,9 @@ def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
 
 def buscar_laudos(tipo_exame=None, nome_paciente=None):
     """Busca laudos no banco"""
-    DB_PATH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
-    
+    _db = Path(__file__).resolve().parent / "fortcordis.db"
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = sqlite3.connect(str(_db))
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -262,10 +261,10 @@ def atualizar_laudo_editado(laudo_id, tipo_exame, caminho_json, dados_atualizado
         with open(caminho_json, 'w', encoding='utf-8') as f:
             json.dump(dados_atualizados, f, ensure_ascii=False, indent=2)
         
-        # Atualiza banco se necessário
+        # Atualiza banco se necessário (usa pasta do projeto - Streamlit Cloud)
         if novo_pdf_path:
-            DB_PATH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
-            conn = sqlite3.connect(str(DB_PATH))
+            _db = Path(__file__).resolve().parent / "fortcordis.db"
+            conn = sqlite3.connect(str(_db))
             cursor = conn.cursor()
             
             tabelas = {
@@ -5388,11 +5387,10 @@ elif menu_principal == "📋 Prontuário":
     from datetime import datetime
 
     def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
-        """Salva o laudo no banco de dados"""
-        DB_PATH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
-        
+        """Salva o laudo no banco de dados (usa o mesmo banco do app)"""
+        _db = Path(__file__).resolve().parent / "fortcordis.db"
         try:
-            conn = sqlite3.connect(str(DB_PATH))
+            conn = sqlite3.connect(str(_db))
             cursor = conn.cursor()
             
             tabelas = {
@@ -5440,11 +5438,10 @@ elif menu_principal == "📋 Prontuário":
             return None, str(e)
 
     def buscar_laudos(tipo_exame=None, nome_paciente=None):
-        """Busca laudos no banco"""
-        DB_PATH = Path.home() / "FortCordis" / "data" / "fortcordis.db"
-        
+        """Busca laudos no banco (usa pasta do projeto - Streamlit Cloud)"""
+        _db = Path(__file__).resolve().parent / "fortcordis.db"
         try:
-            conn = sqlite3.connect(str(DB_PATH))
+            conn = sqlite3.connect(str(_db))
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
