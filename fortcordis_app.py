@@ -5677,16 +5677,22 @@ elif menu_principal == "🩺 Laudos e Exames":
         sexo_sel = c4.selectbox("Sexo", ["Macho", "Fêmea"], index=0 if str(sexo).strip().lower().startswith("m") else 1, key="cad_sexo")
 
         # Cadastro opcional de novas espécies (além de Canina/Felina)
+        # Callback evita StreamlitAPIException (não pode setar cad_especie depois do selectbox no mesmo run)
+        def _adicionar_especie_callback():
+            nova = (st.session_state.get("nova_especie_txt") or "").strip()
+            nova = normalizar_especie_label(nova)
+            if nova:
+                if "lista_especies" not in st.session_state:
+                    st.session_state["lista_especies"] = ["Canina", "Felina"]
+                if nova not in st.session_state["lista_especies"]:
+                    st.session_state["lista_especies"].append(nova)
+                st.session_state["cad_especie"] = nova
+
         with st.expander("Cadastrar nova espécie"):
             nova_especie = st.text_input("Nova espécie (ex.: Lagomorfo)", key="nova_especie_txt")
             c_add1, c_add2 = st.columns([1, 3])
-            if c_add1.button("Adicionar", key="btn_add_especie"):
-                nova_especie = normalizar_especie_label(nova_especie)
-                if nova_especie:
-                    if nova_especie not in st.session_state.get("lista_especies", []):
-                        st.session_state["lista_especies"].append(nova_especie)
-                    st.session_state["cad_especie"] = nova_especie
-                    st.rerun()
+            if c_add1.button("Adicionar", key="btn_add_especie", on_click=_adicionar_especie_callback):
+                st.rerun()
             c_add2.caption("A espécie adicionada fica disponível no menu e pode ser selecionada a qualquer momento.")
 
         c5, c6, c7, c8 = st.columns(4)
