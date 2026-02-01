@@ -34,17 +34,20 @@ st.set_page_config(
 
 # Captura erros não tratados para exibir na página (evita "Error running app" genérico)
 import traceback as _traceback_mod
-_original_excepthook = sys.excepthook
-def _fortcordis_excepthook(etype, value, tb):
-    try:
-        st.error("O aplicativo encontrou um erro. Abra **Detalhes do erro** e copie o texto para enviar ao suporte.")
-        with st.expander("Detalhes do erro (copie e envie para diagnóstico)"):
-            st.code("".join(_traceback_mod.format_exception(etype, value, tb)), language="text")
-        st.stop()
-    except Exception:
-        pass
-    _original_excepthook(etype, value, tb)
-sys.excepthook = _fortcordis_excepthook
+try:
+    _original_excepthook = sys.excepthook
+    def _fortcordis_excepthook(etype, value, tb):
+        try:
+            st.error("O aplicativo encontrou um erro. Abra **Detalhes do erro** e copie o texto para enviar ao suporte.")
+            with st.expander("Detalhes do erro (copie e envie para diagnóstico)"):
+                st.code("".join(_traceback_mod.format_exception(etype, value, tb)), language="text")
+            st.stop()
+        except Exception:
+            pass
+        _original_excepthook(etype, value, tb)
+    sys.excepthook = _fortcordis_excepthook
+except NameError:
+    pass
 
 # CSS global para melhorar o design (sem alterar funcionalidades)
 st.markdown("""
