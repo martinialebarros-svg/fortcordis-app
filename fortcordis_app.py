@@ -1690,6 +1690,59 @@ def listar_registros_arquivados_cached(pasta_str: str):
             pass
     return registros
 
+
+def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro=None):
+    """Lista exames (laudos) do banco com tutor e clínica (JOIN). Para busca por tutor, clínica ou pet após importação."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        out = []
+        for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+            try:
+                # Coluna de arquivo pode ser arquivo_xml ou arquivo_json
+                cur.execute(f"PRAGMA table_info({tabela})")
+                cols = [r[1] for r in cur.fetchall()]
+                col_arquivo = "arquivo_json" if "arquivo_json" in cols else "arquivo_xml"
+                query = f"""
+                    SELECT
+                        l.id, l.tipo_exame, l.nome_paciente AS animal, l.data_exame AS data,
+                        COALESCE(c.nome, cp.nome, '') AS clinica,
+                        COALESCE(t.nome, '') AS tutor,
+                        l.{col_arquivo} AS arquivo_json,
+                        l.arquivo_pdf AS arquivo_pdf
+                    FROM {tabela} l
+                    LEFT JOIN clinicas c ON l.clinica_id = c.id
+                    LEFT JOIN clinicas_parceiras cp ON l.clinica_id = cp.id
+                    LEFT JOIN pacientes p ON l.paciente_id = p.id
+                    LEFT JOIN tutores t ON p.tutor_id = t.id
+                    WHERE 1=1
+                """
+                params = []
+                if tutor_filtro and str(tutor_filtro).strip():
+                    query += " AND UPPER(COALESCE(t.nome, '')) LIKE UPPER(?)"
+                    params.append(f"%{tutor_filtro.strip()}%")
+                if clinica_filtro and str(clinica_filtro).strip():
+                    query += " AND (UPPER(COALESCE(c.nome, '')) LIKE UPPER(?) OR UPPER(COALESCE(cp.nome, '')) LIKE UPPER(?))"
+                    params.append(f"%{clinica_filtro.strip()}%")
+                    params.append(f"%{clinica_filtro.strip()}%")
+                if animal_filtro and str(animal_filtro).strip():
+                    query += " AND UPPER(COALESCE(l.nome_paciente, '')) LIKE UPPER(?)"
+                    params.append(f"%{animal_filtro.strip()}%")
+                query += " ORDER BY l.data_exame DESC, l.id DESC"
+                cur.execute(query, params)
+                for row in cur.fetchall():
+                    r = dict(row)
+                    r["arquivo_json"] = r.get("arquivo_json") or ""
+                    r["arquivo_pdf"] = r.get("arquivo_pdf") or ""
+                    out.append(r)
+            except sqlite3.OperationalError:
+                continue
+        conn.close()
+        return out
+    except Exception:
+        return []
+
 if 'df_ref' not in st.session_state: st.session_state['df_ref'] = carregar_tabela_referencia_cached()
 if 'df_ref_felinos' not in st.session_state:
     st.session_state['df_ref_felinos'] = carregar_tabela_referencia_felinos_cached()
@@ -6646,13 +6699,32 @@ elif menu_principal == "🩺 Laudos e Exames":
 
     with tab7:
         st.header("🔎 Buscar exames arquivados")
-        st.caption(f"Pasta de arquivos: {PASTA_LAUDOS}")
+        st.caption("Busque por tutor, clínica ou pet. Exames importados do backup aparecem na seção «Exames no banco».")
+
+        # ---------- Exames no banco (importados) — visíveis após restaurar backup ----------
+        st.subheader("📂 Exames no banco (importados)")
+        st.caption("Laudos que vieram do backup (clínicas, tutores, pacientes e laudos). Use os filtros para achar por tutor, clínica ou pet.")
+        lb_tutor = st.text_input("Tutor (contém)", key="busca_exame_tutor_db", placeholder="Nome do tutor")
+        lb_clinica = st.text_input("Clínica (contém)", key="busca_exame_clinica_db", placeholder="Nome da clínica")
+        lb_animal = st.text_input("Animal / pet (contém)", key="busca_exame_animal_db", placeholder="Nome do animal")
+        laudos_banco = listar_laudos_do_banco(tutor_filtro=lb_tutor or None, clinica_filtro=lb_clinica or None, animal_filtro=lb_animal or None)
+        if laudos_banco:
+            df_banco = pd.DataFrame(laudos_banco)
+            df_banco["data"] = df_banco["data"].astype(str)
+            st.dataframe(df_banco[["data", "clinica", "animal", "tutor", "tipo_exame"]], use_container_width=True, hide_index=True)
+            st.caption(f"Total: {len(laudos_banco)} exame(s). PDF/JSON desses exames estavam no computador local; aqui só os dados do banco.")
+        else:
+            st.info("Nenhum exame no banco com esses filtros. Se você importou um backup, confira se o arquivo .db continha laudos (ecocardiograma, eletro, pressão).")
+
+        st.markdown("---")
+        st.subheader("📁 Exames na pasta (arquivos JSON/PDF)")
+        st.caption(f"Pasta: {PASTA_LAUDOS}")
 
         # varre apenas JSON (JavaScript Object Notation) e usa cache com TTL (Time To Live)
         registros = listar_registros_arquivados_cached(str(PASTA_LAUDOS))
 
         if not registros:
-            st.warning("Nenhum exame arquivado ainda. Gere um PDF para o sistema arquivar e aparecer aqui.")
+            st.warning("Nenhum exame na pasta. No sistema online essa pasta não existe; use a seção «Exames no banco» acima para ver os importados.")
         else:
             df_busca = pd.DataFrame(registros)
 
