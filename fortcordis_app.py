@@ -10881,7 +10881,7 @@ elif menu_principal == "⚙️ Configurações":
             if assin_atual and os.path.exists(assin_atual):
                 st.info("Assinatura carregada automaticamente.")
                 try:
-                    st.image(assin_atual, width="stretch", width=200)
+                    st.image(assin_atual, width=200)
                 except Exception:
                     pass
             else:
