@@ -1726,12 +1726,21 @@ def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro
                 """
                 params = []
                 if tutor_filtro and str(tutor_filtro).strip():
-                    query += " AND UPPER(COALESCE(t.nome, '')) LIKE UPPER(?)"
+                    if "nome_tutor" in cols:
+                        query += " AND UPPER(COALESCE(t.nome, l.nome_tutor, '')) LIKE UPPER(?)"
+                    else:
+                        query += " AND UPPER(COALESCE(t.nome, '')) LIKE UPPER(?)"
                     params.append(f"%{tutor_filtro.strip()}%")
                 if clinica_filtro and str(clinica_filtro).strip():
-                    query += " AND (UPPER(COALESCE(c.nome, '')) LIKE UPPER(?) OR UPPER(COALESCE(cp.nome, '')) LIKE UPPER(?))"
-                    params.append(f"%{clinica_filtro.strip()}%")
-                    params.append(f"%{clinica_filtro.strip()}%")
+                    if "nome_clinica" in cols:
+                        query += " AND (UPPER(COALESCE(c.nome, '')) LIKE UPPER(?) OR UPPER(COALESCE(cp.nome, '')) LIKE UPPER(?) OR UPPER(COALESCE(l.nome_clinica, '')) LIKE UPPER(?))"
+                        params.append(f"%{clinica_filtro.strip()}%")
+                        params.append(f"%{clinica_filtro.strip()}%")
+                        params.append(f"%{clinica_filtro.strip()}%")
+                    else:
+                        query += " AND (UPPER(COALESCE(c.nome, '')) LIKE UPPER(?) OR UPPER(COALESCE(cp.nome, '')) LIKE UPPER(?))"
+                        params.append(f"%{clinica_filtro.strip()}%")
+                        params.append(f"%{clinica_filtro.strip()}%")
                 if animal_filtro and str(animal_filtro).strip():
                     query += " AND UPPER(COALESCE(NULLIF(TRIM(l.nome_paciente), ''), p.nome, '')) LIKE UPPER(?)"
                     params.append(f"%{animal_filtro.strip()}%")
@@ -10138,6 +10147,13 @@ elif menu_principal == "⚙️ Configurações":
                                 except sqlite3.OperationalError:
                                     pass
                             _criar_tabelas_laudos_se_nao_existirem(cur_l)
+                            # Garantir colunas nome_clinica e nome_tutor ANTES de importar laudos
+                            for _tab in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+                                for _col, _tipo in [("nome_clinica", "TEXT"), ("nome_tutor", "TEXT")]:
+                                    try:
+                                        cur_l.execute(f"ALTER TABLE {_tab} ADD COLUMN {_col} {_tipo}")
+                                    except sqlite3.OperationalError:
+                                        pass
                             conn_local.commit()
                             map_clinica = {}
                             map_clinica_parceiras = {}
@@ -10264,11 +10280,39 @@ elif menu_principal == "⚙️ Configurações":
                                         continue
                                     for row in rows_laudo:
                                         row_d = dict(zip(colunas_laudo, row))
-                                        novo_paciente_id = map_paciente.get(int(row_d["paciente_id"])) if row_d.get("paciente_id") else None
+                                        old_paciente_id = int(row_d["paciente_id"]) if row_d.get("paciente_id") else None
+                                        novo_paciente_id = map_paciente.get(old_paciente_id) if old_paciente_id is not None else None
                                         old_clinica_id = int(row_d["clinica_id"]) if row_d.get("clinica_id") else None
                                         novo_clinica_id = (map_clinica.get(old_clinica_id) or map_clinica_parceiras.get(old_clinica_id)) if old_clinica_id is not None else None
                                         row_d["paciente_id"] = novo_paciente_id
                                         row_d["clinica_id"] = novo_clinica_id
+                                        # Preencher fallback de nomes a partir do backup quando o mapeamento de ID falha
+                                        if "nome_paciente" in colunas_sem_id and not (row_d.get("nome_paciente") or "").strip() and old_paciente_id is not None:
+                                            try:
+                                                r_bp = cur_b.execute("SELECT nome FROM pacientes WHERE id=?", (old_paciente_id,)).fetchone()
+                                                if r_bp:
+                                                    row_d["nome_paciente"] = r_bp[0] if isinstance(r_bp, (list, tuple)) else r_bp["nome"]
+                                            except Exception:
+                                                pass
+                                        if "nome_clinica" in colunas_sem_id and not (row_d.get("nome_clinica") or "").strip() and old_clinica_id is not None:
+                                            try:
+                                                r_bc = cur_b.execute("SELECT nome FROM clinicas WHERE id=?", (old_clinica_id,)).fetchone()
+                                                if not r_bc:
+                                                    r_bc = cur_b.execute("SELECT nome FROM clinicas_parceiras WHERE id=?", (old_clinica_id,)).fetchone()
+                                                if r_bc:
+                                                    row_d["nome_clinica"] = r_bc[0] if isinstance(r_bc, (list, tuple)) else r_bc["nome"]
+                                            except Exception:
+                                                pass
+                                        if "nome_tutor" in colunas_sem_id and not (row_d.get("nome_tutor") or "").strip() and old_paciente_id is not None:
+                                            try:
+                                                r_bt = cur_b.execute(
+                                                    "SELECT t.nome FROM pacientes p JOIN tutores t ON t.id = p.tutor_id WHERE p.id=?",
+                                                    (old_paciente_id,),
+                                                ).fetchone()
+                                                if r_bt:
+                                                    row_d["nome_tutor"] = r_bt[0] if isinstance(r_bt, (list, tuple)) else r_bt["nome"]
+                                            except Exception:
+                                                pass
                                         vals = []
                                         for c in colunas_sem_id:
                                             if c == "arquivo_xml":
@@ -10286,15 +10330,9 @@ elif menu_principal == "⚙️ Configurações":
                                             pass
                                 except sqlite3.OperationalError:
                                     pass
-                            # Preencher nome_paciente, nome_clinica e nome_tutor quando vazios (a partir das tabelas vinculadas)
+                            # Preencher nome_paciente, nome_clinica e nome_tutor quando vazios (a partir das tabelas vinculadas no destino)
                             for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
                                 try:
-                                    cur_l.execute(f"PRAGMA table_info({tabela})")
-                                    cols_dest = [r[1] for r in cur_l.fetchall()]
-                                    if "nome_clinica" not in cols_dest:
-                                        cur_l.execute(f"ALTER TABLE {tabela} ADD COLUMN nome_clinica TEXT")
-                                    if "nome_tutor" not in cols_dest:
-                                        cur_l.execute(f"ALTER TABLE {tabela} ADD COLUMN nome_tutor TEXT")
                                     cur_l.execute(f"""UPDATE {tabela} SET nome_paciente = (SELECT nome FROM pacientes WHERE pacientes.id = {tabela}.paciente_id)
                                         WHERE (nome_paciente IS NULL OR TRIM(COALESCE(nome_paciente, '')) = '') AND paciente_id IS NOT NULL""")
                                     cur_l.execute(f"""UPDATE {tabela} SET nome_clinica = COALESCE(
