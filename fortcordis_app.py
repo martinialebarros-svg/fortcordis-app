@@ -6803,8 +6803,8 @@ elif menu_principal == "🩺 Laudos e Exames":
             )
             if df_uniq["clinica"].fillna("").str.strip().eq("").all() and df_uniq["animal"].fillna("").str.strip().eq("").all():
                 st.info(
-                    "Clínica, animal e tutor vazios? Reimporte o backup **uma vez** em Configurações > Importar dados (com o .db atualizado). "
-                    "Assim os vínculos são preenchidos e os nomes aparecem aqui."
+                    "**Clínica, animal e tutor vazios?** Em Configurações > Importar dados: marque **«Limpar laudos antes de importar»** e importe o backup **uma vez**. "
+                    "Isso apaga os laudos repetidos e reimporta com os vínculos corretos — os nomes passam a aparecer aqui."
                 )
         else:
             if total_banco > 0:
@@ -10160,6 +10160,11 @@ elif menu_principal == "⚙️ Configurações":
                 type=["db"],
                 key="upload_backup_db",
             )
+            limpar_laudos_antes = st.checkbox(
+                "🗑️ Limpar laudos antes de importar (recomendado se há muitos repetidos ou clínica/animal/tutor vazios)",
+                key="import_limpar_laudos",
+                help="Apaga todos os laudos do banco antes de importar. Use isso para começar do zero e preencher clínica/animal/tutor corretamente."
+            )
             if arquivo_backup is not None:
                 if st.button("🔄 Importar agora", key="btn_importar_backup", type="primary"):
                     import tempfile
@@ -10258,6 +10263,13 @@ elif menu_principal == "⚙️ Configurações":
                                 )
                             """)
                             conn_local.commit()
+                            if limpar_laudos_antes:
+                                for _t in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
+                                    try:
+                                        cur_l.execute(f"DELETE FROM {_t}")
+                                    except sqlite3.OperationalError:
+                                        pass
+                                conn_local.commit()
                             map_clinica = {}
                             map_clinica_parceiras = {}
                             map_tutor = {}
