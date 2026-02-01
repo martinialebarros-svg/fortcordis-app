@@ -96,6 +96,47 @@ st.markdown("---")
 # ============================================================
 
 
+def _criar_tabelas_laudos_se_nao_existirem(cursor):
+    """Cria tabelas de laudos se não existirem (Streamlit Cloud / primeiro deploy)."""
+    for nome_tabela, sql in [
+        ("laudos_ecocardiograma", """
+            CREATE TABLE IF NOT EXISTS laudos_ecocardiograma (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paciente_id INTEGER, data_exame TEXT, clinica_id INTEGER, veterinario_id INTEGER,
+                tipo_exame TEXT DEFAULT 'ecocardiograma',
+                nome_paciente TEXT, especie TEXT, raca TEXT, idade TEXT, peso REAL,
+                modo_m TEXT, modo_bidimensional TEXT, doppler TEXT, conclusao TEXT, observacoes TEXT,
+                achados_normais TEXT, achados_alterados TEXT,
+                arquivo_xml TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, criado_por INTEGER
+            )
+        """),
+        ("laudos_eletrocardiograma", """
+            CREATE TABLE IF NOT EXISTS laudos_eletrocardiograma (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paciente_id INTEGER, data_exame TEXT, clinica_id INTEGER, veterinario_id INTEGER,
+                tipo_exame TEXT DEFAULT 'eletrocardiograma',
+                nome_paciente TEXT, especie TEXT, raca TEXT, idade TEXT, peso REAL,
+                ritmo TEXT, frequencia_cardiaca INTEGER, conclusao TEXT, observacoes TEXT,
+                arquivo_xml TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, criado_por INTEGER
+            )
+        """),
+        ("laudos_pressao_arterial", """
+            CREATE TABLE IF NOT EXISTS laudos_pressao_arterial (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paciente_id INTEGER, data_exame TEXT, clinica_id INTEGER, veterinario_id INTEGER,
+                tipo_exame TEXT DEFAULT 'pressao_arterial',
+                nome_paciente TEXT, especie TEXT, raca TEXT, idade TEXT, peso REAL,
+                pressao_sistolica INTEGER, pressao_diastolica INTEGER, conclusao TEXT, observacoes TEXT,
+                arquivo_xml TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, criado_por INTEGER
+            )
+        """),
+    ]:
+        cursor.execute(sql)
+
+
 def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
     """Salva o laudo no banco de dados - VERSÃO FINAL AJUSTADA"""
     # Usar pasta do projeto (funciona no Streamlit Cloud)
@@ -103,6 +144,8 @@ def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
     try:
         conn = sqlite3.connect(str(_db))
         cursor = conn.cursor()
+        _criar_tabelas_laudos_se_nao_existirem(cursor)
+        conn.commit()
         
         tabelas = {
             "ecocardiograma": "laudos_ecocardiograma",
