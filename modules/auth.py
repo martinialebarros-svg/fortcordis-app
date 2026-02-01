@@ -96,6 +96,14 @@ def inicializar_tabelas_auth():
             FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
         )
     """)
+    # Token para redefinir senha (esqueci minha senha)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reset_senha_tokens (
+            token TEXT PRIMARY KEY,
+            email TEXT NOT NULL,
+            expira_em TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
     print("✅ Tabelas de autenticação criadas com sucesso!")
@@ -400,6 +408,62 @@ def atualizar_senha(usuario_id: int, senha_atual: str, nova_senha: str) -> Tuple
     finally:
         conn.close()
 
+
+def criar_token_reset_senha(email: str) -> Tuple[Optional[str], str]:
+    """
+    Cria token para redefinir senha (fluxo "Esqueci minha senha").
+    Returns:
+        (token, mensagem) — token é None se falhou
+    """
+    email = (email or "").strip().lower()
+    if not email or "@" not in email:
+        return None, "❌ E-mail inválido"
+    conn = sqlite3.connect(str(DB_PATH))
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM usuarios WHERE email = ? AND ativo = 1", (email,))
+        if not cursor.fetchone():
+            return None, "❌ Nenhum usuário encontrado com este e-mail"
+        token = secrets.token_urlsafe(32)
+        expira = (datetime.now() + timedelta(hours=1)).isoformat()
+        cursor.execute(
+            "INSERT INTO reset_senha_tokens (token, email, expira_em) VALUES (?, ?, ?)",
+            (token, email, expira),
+        )
+        conn.commit()
+        return token, "✅ Verifique o link de redefinição (esta página será atualizada)"
+    except Exception as e:
+        return None, f"❌ Erro: {e}"
+    finally:
+        conn.close()
+
+
+def redefinir_senha_por_token(token: str, nova_senha: str) -> Tuple[bool, str]:
+    """
+    Redefine a senha usando o token do fluxo "Esqueci minha senha".
+    """
+    if len(nova_senha) < 8:
+        return False, "❌ Nova senha deve ter no mínimo 8 caracteres"
+    conn = sqlite3.connect(str(DB_PATH))
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT email FROM reset_senha_tokens WHERE token = ? AND datetime(expira_em) > datetime('now')",
+            (token,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return False, "❌ Link inválido ou expirado. Solicite uma nova redefinição."
+        email = row[0]
+        novo_hash = hash_senha(nova_senha)
+        cursor.execute("UPDATE usuarios SET senha_hash = ? WHERE email = ?", (novo_hash, email))
+        cursor.execute("DELETE FROM reset_senha_tokens WHERE token = ?", (token,))
+        conn.commit()
+        return True, "✅ Senha alterada com sucesso! Faça login com a nova senha."
+    except Exception as e:
+        return False, f"❌ Erro: {e}"
+    finally:
+        conn.close()
 
 
 def desativar_usuario(usuario_id: int, admin_id: int) -> Tuple[bool, str]:
@@ -941,6 +1005,44 @@ def mostrar_tela_login():
     except Exception:
         pass
     
+    # Redefinir senha por token na URL (?reset_senha=xxx)
+    try:
+        q = getattr(st, "query_params", None)
+        if q is not None:
+            reset_token = q.get("reset_senha")
+            if isinstance(reset_token, list):
+                reset_token = reset_token[0] if reset_token else None
+            if reset_token:
+                st.markdown("### 🔑 Redefinir senha")
+                with st.form("form_reset_senha", clear_on_submit=True):
+                    nova_senha = st.text_input("Nova senha (mínimo 8 caracteres)", type="password", key="reset_nova_senha")
+                    nova_senha2 = st.text_input("Confirmar nova senha", type="password", key="reset_nova_senha2")
+                    if st.form_submit_button("Alterar senha"):
+                        if not nova_senha or len(nova_senha) < 8:
+                            st.error("A senha deve ter no mínimo 8 caracteres.")
+                        elif nova_senha != nova_senha2:
+                            st.error("As senhas não coincidem.")
+                        else:
+                            ok, msg = redefinir_senha_por_token(reset_token, nova_senha)
+                            if ok:
+                                st.success(msg)
+                                try:
+                                    params = {k: v for k, v in q.items() if k != "reset_senha"}
+                                    if hasattr(q, "from_dict"):
+                                        q.from_dict(params)
+                                    elif hasattr(q, "clear"):
+                                        q.clear()
+                                        for k, v in params.items():
+                                            q[k] = v
+                                except Exception:
+                                    pass
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                return False
+    except Exception:
+        pass
+
     # Garante que tabelas e papéis existem (primeira vez / deploy novo)
     try:
         inicializar_tabelas_auth()
@@ -1046,9 +1148,42 @@ def mostrar_tela_login():
     
     st.markdown("### 🔐 Acesso ao Sistema")
     
-    # Botão para abrir tela "Criar primeiro usuário" (útil quando ?primeiro_usuario=1 não funciona)
+    # Botão para abrir tela "Criar primeiro usuário"
     if st.button("👤 Primeiro acesso? Criar usuário administrador", type="secondary", use_container_width=True):
         st.session_state["mostrar_criar_primeiro_usuario"] = True
+        st.rerun()
+    
+    # Esqueci minha senha: formulário de e-mail e redirecionamento com token
+    if st.session_state.get("mostrar_esqueci_senha"):
+        with st.form("form_esqueci_senha", clear_on_submit=False):
+            st.caption("Digite o e-mail da sua conta. Você será redirecionado para definir uma nova senha.")
+            email_esqueci = st.text_input("📧 E-mail", key="esqueci_email")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.form_submit_button("Enviar"):
+                    if not email_esqueci or "@" not in email_esqueci:
+                        st.error("Informe um e-mail válido.")
+                    else:
+                        token, msg = criar_token_reset_senha(email_esqueci.strip().lower())
+                        if token:
+                            try:
+                                q = getattr(st, "query_params", None)
+                                if q is not None:
+                                    st.query_params["reset_senha"] = token
+                            except Exception:
+                                pass
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+            with col_b:
+                if st.form_submit_button("Voltar ao login"):
+                    st.session_state.pop("mostrar_esqueci_senha", None)
+                    st.rerun()
+        return False
+    
+    if st.button("🔑 Esqueci minha senha", type="secondary", use_container_width=True):
+        st.session_state["mostrar_esqueci_senha"] = True
         st.rerun()
     
     st.markdown("---")
