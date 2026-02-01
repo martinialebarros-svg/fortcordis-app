@@ -10322,10 +10322,11 @@ elif menu_principal == "⚙️ Configurações":
                                     if not cols_cp_insert:
                                         cols_cp_insert = [c for c in dest_cp if c != "id"]
                                     cur_b.execute("SELECT * FROM clinicas_parceiras")
+                                    erro_cp_msg = None
                                     for row in cur_b.fetchall():
                                         row_dict = dict(zip(cols_cp, row))
                                         old_id = row_dict.get("id")
-                                        nome_cp = row_dict.get("nome")
+                                        nome_cp = (row_dict.get("nome") or "").strip() if row_dict.get("nome") is not None else ""
                                         vals_cp = [row_dict.get(c) for c in cols_cp_insert]
                                         placeholders_cp = ", ".join(["?" for _ in cols_cp_insert])
                                         try:
@@ -10333,14 +10334,19 @@ elif menu_principal == "⚙️ Configurações":
                                                 f"INSERT OR IGNORE INTO clinicas_parceiras ({', '.join(cols_cp_insert)}) VALUES ({placeholders_cp})",
                                                 vals_cp,
                                             )
-                                            if cur_l.rowcount:
+                                            # sqlite3 rowcount pode ser -1; lastrowid > 0 indica inserção nova
+                                            if getattr(cur_l, "lastrowid", 0) and cur_l.lastrowid > 0:
                                                 total_cp += 1
-                                        except sqlite3.OperationalError:
-                                            pass
-                                        r = cur_l.execute("SELECT id FROM clinicas_parceiras WHERE nome=?", (nome_cp,)).fetchone()
-                                        novo_id = (r[0] if isinstance(r, (list, tuple)) else r["id"]) if r else None
-                                        if novo_id is not None and old_id is not None:
-                                            map_clinica_parceiras[int(old_id)] = novo_id
+                                        except sqlite3.OperationalError as e:
+                                            if erro_cp_msg is None:
+                                                erro_cp_msg = str(e)
+                                        if nome_cp:
+                                            r = cur_l.execute("SELECT id FROM clinicas_parceiras WHERE nome=?", (nome_cp,)).fetchone()
+                                            novo_id = (r[0] if isinstance(r, (list, tuple)) else r["id"]) if r else None
+                                            if novo_id is not None and old_id is not None:
+                                                map_clinica_parceiras[int(old_id)] = novo_id
+                                    if erro_cp_msg:
+                                        erros_import.append(("clinicas_parceiras", erro_cp_msg))
                             except sqlite3.OperationalError as e:
                                 erros_import.append(("clinicas_parceiras", str(e)))
                             except Exception as e:
@@ -10357,6 +10363,10 @@ elif menu_principal == "⚙️ Configurações":
                                     cur_b.execute(f"PRAGMA table_info({tabela})")
                                     colunas_laudo = [c[1] for c in cur_b.fetchall()]
                                     colunas_sem_id = [c for c in colunas_laudo if c != "id" and c in colunas_destino]
+                                    # Incluir nome_paciente, nome_clinica, nome_tutor do destino para preencher no INSERT (backup pode não ter essas colunas)
+                                    for col_extra in ("nome_paciente", "nome_clinica", "nome_tutor"):
+                                        if col_extra in colunas_destino and col_extra not in colunas_sem_id:
+                                            colunas_sem_id.append(col_extra)
                                     if not colunas_sem_id:
                                         continue
                                     for row in rows_laudo:
@@ -10367,15 +10377,15 @@ elif menu_principal == "⚙️ Configurações":
                                         novo_clinica_id = (map_clinica.get(old_clinica_id) or map_clinica_parceiras.get(old_clinica_id)) if old_clinica_id is not None else None
                                         row_d["paciente_id"] = novo_paciente_id
                                         row_d["clinica_id"] = novo_clinica_id
-                                        # Preencher fallback de nomes a partir do backup quando o mapeamento de ID falha
-                                        if "nome_paciente" in colunas_sem_id and not (row_d.get("nome_paciente") or "").strip() and old_paciente_id is not None:
+                                        # Preencher fallback de nomes a partir do backup (para exibir quando JOIN falhar ou backup não tem coluna)
+                                        if not (row_d.get("nome_paciente") or "").strip() and old_paciente_id is not None:
                                             try:
                                                 r_bp = cur_b.execute("SELECT nome FROM pacientes WHERE id=?", (old_paciente_id,)).fetchone()
                                                 if r_bp:
                                                     row_d["nome_paciente"] = r_bp[0] if isinstance(r_bp, (list, tuple)) else r_bp["nome"]
                                             except Exception:
                                                 pass
-                                        if "nome_clinica" in colunas_sem_id and not (row_d.get("nome_clinica") or "").strip() and old_clinica_id is not None:
+                                        if not (row_d.get("nome_clinica") or "").strip() and old_clinica_id is not None:
                                             try:
                                                 r_bc = cur_b.execute("SELECT nome FROM clinicas WHERE id=?", (old_clinica_id,)).fetchone()
                                                 if not r_bc:
@@ -10384,7 +10394,7 @@ elif menu_principal == "⚙️ Configurações":
                                                     row_d["nome_clinica"] = r_bc[0] if isinstance(r_bc, (list, tuple)) else r_bc["nome"]
                                             except Exception:
                                                 pass
-                                        if "nome_tutor" in colunas_sem_id and not (row_d.get("nome_tutor") or "").strip() and old_paciente_id is not None:
+                                        if not (row_d.get("nome_tutor") or "").strip() and old_paciente_id is not None:
                                             try:
                                                 r_bt = cur_b.execute(
                                                     "SELECT t.nome FROM pacientes p JOIN tutores t ON t.id = p.tutor_id WHERE p.id=?",
@@ -10444,7 +10454,7 @@ elif menu_principal == "⚙️ Configurações":
                                     "O backup tinha laudos mas nenhum foi inserido. "
                                     "Possível causa: nomes de colunas diferentes. Gere o backup com exportar_backup.py na pasta do projeto FortCordis_Novo."
                                 )
-                            if (n_c_b > 0 or n_t_b > 0 or n_p_b > 0) and total_c == 0 and total_t == 0 and total_p == 0:
+                            if (n_c_b or n_t_b or n_p_b or n_l_b or n_cp_b) and (total_c + reused_c + total_t + reused_t + total_p + total_l) == 0:
                                 st.warning(
                                     "O backup tinha dados mas nada foi inserido. Verifique se o arquivo .db foi gerado pelo exportar_backup.py e se as tabelas existem no backup."
                                 )
