@@ -1704,13 +1704,16 @@ def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro
                 cur.execute(f"PRAGMA table_info({tabela})")
                 cols = [r[1] for r in cur.fetchall()]
                 col_arquivo = "arquivo_json" if "arquivo_json" in cols else "arquivo_xml"
+                # Fallback: se a tabela tiver nome_clinica/nome_tutor em texto, usar quando JOIN vier vazio
+                sel_clinica = "COALESCE(c.nome, cp.nome, l.nome_clinica, '') AS clinica" if "nome_clinica" in cols else "COALESCE(c.nome, cp.nome, '') AS clinica"
+                sel_tutor = "COALESCE(t.nome, l.nome_tutor, '') AS tutor" if "nome_tutor" in cols else "COALESCE(t.nome, '') AS tutor"
                 query = f"""
                     SELECT
                         l.id, l.tipo_exame,
-                        COALESCE(l.nome_paciente, p.nome, '') AS animal,
+                        COALESCE(NULLIF(TRIM(l.nome_paciente), ''), p.nome, '') AS animal,
                         l.data_exame AS data,
-                        COALESCE(c.nome, cp.nome, '') AS clinica,
-                        COALESCE(t.nome, '') AS tutor,
+                        {sel_clinica},
+                        {sel_tutor},
                         l.{col_arquivo} AS arquivo_json,
                         l.arquivo_pdf AS arquivo_pdf
                     FROM {tabela} l

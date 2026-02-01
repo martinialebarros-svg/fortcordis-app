@@ -80,12 +80,17 @@ No **.gitignore** inclua, por exemplo:
 
 Depois do deploy o banco online fica vazio. Para puxar os dados que você já tinha no computador:
 
-1. **No seu computador** (na pasta do projeto, onde está o `fortcordis.db` com os dados):
+1. **No seu computador** (na pasta do projeto):
    ```bash
    python exportar_backup.py
    ```
    Isso gera um arquivo `backup_fortcordis_AAAAAMMDD_HHMM.db` na mesma pasta.  
-   Para outro nome: `python exportar_backup.py --saida meu_backup.db`
+   - Para outro nome: `python exportar_backup.py --saida meu_backup.db`  
+   - **Dois bancos no projeto:** o script tenta, nesta ordem: (1) `fortcordis.db` na pasta do projeto (FortCordis_Novo), (2) `FortCordis/data/fortcordis.db`, (3) `FortCordis/DB/fortcordis.db`. Se o backup sair com 0 registros, seus dados podem estar no outro caminho. Nesse caso use:
+   ```bash
+   python exportar_backup.py --banco "C:\Users\SEU_USUARIO\FortCordis\data\fortcordis.db"
+   ```
+   O script mostra de qual arquivo está exportando e quantos registros tem cada tabela antes de gerar o backup.
 
 2. **No sistema online** (Streamlit):
    - Faça login como **administrador**.
