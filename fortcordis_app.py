@@ -372,7 +372,7 @@ if str(_app_root) not in sys.path:
     sys.path.insert(0, str(_app_root))
 sys.path.append(str(_app_root / "fortcordis_modules"))
 
-from database import (
+from fortcordis_modules.database import (
     inicializar_banco,
     gerar_numero_os,
     calcular_valor_final,
@@ -1117,20 +1117,28 @@ def normalizar_especie_label(especie_txt: str) -> str:
 
 # Função de imagem (Mantida) — opacidade baixa = marca d'água mais suave (não atrapalha leitura)
 def criar_imagem_esmaecida(input_path, output_path, opacidade=0.05):
-    """Gera versão esmaecida do logo para marca d'água. Usa getdata/putdata (PIL padrão)."""
+    """Gera versão esmaecida do logo para marca d'água. Compatível com Pillow 10+ (getdata ou get_flattened_data)."""
     try:
         img = Image.open(input_path).convert("RGBA")
-        # getdata() retorna sequência de (r, g, b, a) por pixel
-        dados = list(img.getdata())
-        novos_dados = []
-        for pixel in dados:
-            if len(pixel) >= 4:
-                r, g, b, a = pixel[0], pixel[1], pixel[2], pixel[3]
-            else:
-                r, g, b = pixel[0], pixel[1], pixel[2]
-                a = 255
-            novo_alpha = max(0, min(255, int(a * opacidade)))
-            novos_dados.append((r, g, b, novo_alpha))
+        # Pillow 12+: get_flattened_data() (getdata() deprecado); Pillow antigo: getdata()
+        if hasattr(img, "get_flattened_data"):
+            flat = img.get_flattened_data()
+            novos_dados = []
+            for i in range(0, len(flat), 4):
+                r, g, b, a = flat[i], flat[i + 1], flat[i + 2], flat[i + 3]
+                novo_alpha = max(0, min(255, int(a * opacidade)))
+                novos_dados.append((r, g, b, novo_alpha))
+        else:
+            dados = list(img.getdata())
+            novos_dados = []
+            for pixel in dados:
+                if len(pixel) >= 4:
+                    r, g, b, a = pixel[0], pixel[1], pixel[2], pixel[3]
+                else:
+                    r, g, b = pixel[0], pixel[1], pixel[2]
+                    a = 255
+                novo_alpha = max(0, min(255, int(a * opacidade)))
+                novos_dados.append((r, g, b, novo_alpha))
         img.putdata(novos_dados)
         img.save(output_path, "PNG")
         return True
