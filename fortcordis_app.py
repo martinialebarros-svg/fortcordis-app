@@ -9589,13 +9589,14 @@ elif menu_principal == "⚙️ Configurações":
         
         st.title("⚙️ Configurações do Sistema")
         # Cria abas
-        tab_permissoes, tab_usuarios, tab_papeis, tab_sistema, tab_importar, tab_assinatura = st.tabs([
+        tab_permissoes, tab_usuarios, tab_papeis, tab_sistema, tab_importar, tab_assinatura, tab_diagnostico = st.tabs([
             "🔐 Minhas Permissões",
             "👥 Usuários do Sistema",
             "🎭 Papéis e Permissões",
             "⚙️ Configurações Gerais",
             "📥 Importar dados",
-            "🖊️ Assinatura/Carimbo"
+            "🖊️ Assinatura/Carimbo",
+            "📊 Diagnóstico (memória/CPU)"
         ])
 
         #============================================================================
@@ -11032,6 +11033,53 @@ elif menu_principal == "⚙️ Configurações":
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar assinatura: {e}")
+
+        # ============================================================================
+        # ABA: DIAGNÓSTICO (memória/CPU) – monitoramento local com psutil
+        # ============================================================================
+        with tab_diagnostico:
+            st.subheader("📊 Diagnóstico (memória/CPU)")
+            st.caption(
+                "Métricas do processo deste app. Útil para identificar vazamento de memória ou cache crescendo "
+                "(recomendado pela comunidade Streamlit para profile de uso de memória)."
+            )
+            try:
+                import psutil
+                proc = psutil.Process()
+                # Memória
+                mem = proc.memory_info()
+                mem_rss_mb = mem.rss / (1024 * 1024)
+                mem_vms_mb = mem.vms / (1024 * 1024)
+                mem_percent = proc.memory_percent()
+                # CPU (janela recente)
+                cpu_percent = proc.cpu_percent(interval=0.1)
+                # Sistema (opcional)
+                virt = psutil.virtual_memory()
+                sys_used_pct = virt.percent
+                sys_avail_gb = virt.available / (1024 ** 3)
+            except Exception as e:
+                st.error(f"Erro ao ler métricas: {e}")
+                st.code(str(e), language="text")
+            else:
+                if st.button("🔄 Atualizar métricas", key="diagnostico_refresh"):
+                    st.rerun()
+                st.markdown("---")
+                st.markdown("#### Processo deste app")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("RAM (RSS)", f"{mem_rss_mb:.1f} MB", help="Memória residente do processo")
+                    st.metric("RAM (% sistema)", f"{mem_percent:.1f}%", help="Percentual da RAM do sistema usado por este processo")
+                with c2:
+                    st.metric("Memória virtual (VMS)", f"{mem_vms_mb:.1f} MB", help="Espaço de endereço virtual")
+                    st.metric("CPU (processo)", f"{cpu_percent:.1f}%", help="Uso de CPU deste processo (janela recente)")
+                with c3:
+                    st.metric("RAM sistema em uso", f"{sys_used_pct:.1f}%", help="Total da máquina")
+                    st.metric("RAM disponível (sistema)", f"{sys_avail_gb:.2f} GB", help="Memória livre no sistema")
+                st.markdown("---")
+                st.caption(
+                    "Se os valores de RAM (RSS) subirem muito ao usar o app, pode indicar vazamento ou cache. "
+                    "No Community Cloud, use esta aba para acompanhar o uso antes de atingir o limite."
+                )
 
 QUALI_DET = {
     "valvas": ["mitral", "tricuspide", "aortica", "pulmonar"],
