@@ -1984,6 +1984,22 @@ def obter_laudo_arquivo_por_id(laudo_arquivo_id):
         return None
 
 
+def obter_imagens_laudo_arquivo(laudo_arquivo_id):
+    """Retorna lista de dicts com nome_arquivo e conteudo (bytes) das imagens do exame no banco."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT nome_arquivo, conteudo FROM laudos_arquivos_imagens WHERE laudo_arquivo_id=? ORDER BY ordem, id",
+            (laudo_arquivo_id,),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return [{"nome_arquivo": r[0] or f"imagem_{i}.jpg", "conteudo": r[1] or b""} for i, r in enumerate(rows)]
+    except Exception:
+        return []
+
+
 if 'df_ref' not in st.session_state: st.session_state['df_ref'] = carregar_tabela_referencia_cached()
 if 'df_ref_felinos' not in st.session_state:
     st.session_state['df_ref_felinos'] = carregar_tabela_referencia_felinos_cached()
@@ -3354,19 +3370,36 @@ def _graus_da_patologia(db: dict, patologia_base: str):
 # dos widgets do cadastro/medidas serem criados.
 # ==========================
 def _aplicar_carregamento_exame_pendente():
-    arq = st.session_state.pop("__carregar_exame_json_path", None)
-    if not arq:
-        return
-
-    try:
-        obj = json.loads(Path(arq).read_text(encoding="utf-8"))
-    except Exception as e:
-        st.error(f"Não consegui abrir o JSON selecionado: {e}")
-        return
-
-    if not isinstance(obj, dict):
-        st.error("JSON inválido (estrutura inesperada).")
-        return
+    # 1) Carregamento a partir do banco (JSON + imagens já em memória)
+    obj = st.session_state.pop("__carregar_exame_json_content", None)
+    imagens_banco = st.session_state.pop("__carregar_exame_imagens", None)
+    if obj is not None:
+        if not isinstance(obj, dict):
+            st.error("JSON inválido (estrutura inesperada).")
+            return
+        if imagens_banco:
+            st.session_state["imagens_carregadas"] = [
+                {"name": (it.get("name") or it.get("nome_arquivo") or f"imagem_{i}.jpg"), "bytes": it.get("bytes") or it.get("conteudo") or b""}
+                for i, it in enumerate(imagens_banco)
+            ]
+        else:
+            st.session_state["imagens_carregadas"] = []
+        # segue para o bloco comum de preenchimento (pac, medidas, etc.) abaixo
+    else:
+        # 2) Carregamento a partir de arquivo (path)
+        arq = st.session_state.pop("__carregar_exame_json_path", None)
+        if not arq:
+            return
+        try:
+            obj = json.loads(Path(arq).read_text(encoding="utf-8"))
+        except Exception as e:
+            st.error(f"Não consegui abrir o JSON selecionado: {e}")
+            return
+        if not isinstance(obj, dict):
+            st.error("JSON inválido (estrutura inesperada).")
+            return
+        # carregamento por path não preenche imagens_carregadas (arquivos em disco)
+        st.session_state["imagens_carregadas"] = []
 
     pac = obj.get("paciente", {}) if isinstance(obj.get("paciente"), dict) else {}
     medidas = obj.get("medidas", {}) if isinstance(obj.get("medidas"), dict) else {}
@@ -7019,7 +7052,7 @@ elif menu_principal == "🩺 Laudos e Exames":
             row_arq = laudos_arq[idx_arq]
             blob_row = obter_laudo_arquivo_por_id(row_arq["id_laudo_arquivo"])
             if blob_row:
-                cj, cp = st.columns(2)
+                cj, cp, cl = st.columns(3)
                 with cj:
                     if blob_row.get("conteudo_json"):
                         st.download_button(
@@ -7042,6 +7075,22 @@ elif menu_principal == "🩺 Laudos e Exames":
                         )
                     else:
                         st.caption("PDF não armazenado.")
+                with cl:
+                    if blob_row.get("conteudo_json"):
+                        if st.button("📥 Carregar JSON", key="btn_carregar_json_banco", help="Carrega dados e imagens do exame para edição nas abas Cadastro, Medidas, Imagens, etc."):
+                            try:
+                                obj = json.loads(blob_row["conteudo_json"].decode("utf-8") if isinstance(blob_row["conteudo_json"], bytes) else blob_row["conteudo_json"])
+                                imagens = obter_imagens_laudo_arquivo(row_arq["id_laudo_arquivo"])
+                                st.session_state["__carregar_exame_json_content"] = obj
+                                st.session_state["__carregar_exame_imagens"] = [
+                                    {"name": (img.get("nome_arquivo") or f"imagem_{i}.jpg"), "bytes": img.get("conteudo") or b""}
+                                    for i, img in enumerate(imagens)
+                                ]
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao carregar exame: {e}")
+                    else:
+                        st.caption("—")
         else:
             if n_arq > 0:
                 st.warning("Nenhum exame com esses filtros. Limpe a busca para ver todos.")
