@@ -366,7 +366,11 @@ def atualizar_laudo_editado(laudo_id, tipo_exame, caminho_json, dados_atualizado
 # MÓDULOS DE GESTÃO (NOVOS)
 # ============================================================================
 import sys
-sys.path.append(str(Path(__file__).parent / "fortcordis_modules"))
+_app_root = Path(__file__).resolve().parent
+# Garantir que o app root está no path (Streamlit Cloud pode rodar de outro diretório)
+if str(_app_root) not in sys.path:
+    sys.path.insert(0, str(_app_root))
+sys.path.append(str(_app_root / "fortcordis_modules"))
 
 from database import (
     inicializar_banco,
