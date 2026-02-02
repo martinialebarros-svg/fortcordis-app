@@ -386,13 +386,13 @@ from database import (
     criar_os_ao_marcar_realizado,
 )
 
-from integrations import (
+from fortcordis_modules.integrations import (
     whatsapp_link,
     mensagem_confirmacao_agendamento,
     exportar_agendamento_ics,
 )
 
-from documentos import (
+from fortcordis_modules.documentos import (
     gerar_receituario_pdf,
     gerar_atestado_saude_pdf,
     gerar_gta_pdf,
@@ -693,9 +693,10 @@ if "database" in sys.modules:
 def _db_conn_safe():
     """Abre o banco; se estiver corrompido/travado (ex.: após 502 na importação), reinicia o arquivo para o app voltar a abrir."""
     import time
+    # check_same_thread=False: Streamlit usa várias threads; a conexão em cache pode ser usada em outra thread.
     conn = None
     try:
-        conn = sqlite3.connect(str(DB_PATH), timeout=10)
+        conn = sqlite3.connect(str(DB_PATH), timeout=10, check_same_thread=False)
         conn.execute("SELECT 1")
         conn.row_factory = sqlite3.Row
         return conn
@@ -717,7 +718,7 @@ def _db_conn_safe():
                     except Exception:
                         pass
             path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(DB_PATH))
+            conn = sqlite3.connect(str(DB_PATH), timeout=10, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             if "db_was_recovered" not in st.session_state:
                 st.session_state["db_was_recovered"] = True
