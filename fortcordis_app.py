@@ -1117,18 +1117,25 @@ def normalizar_especie_label(especie_txt: str) -> str:
 
 # Função de imagem (Mantida) — opacidade baixa = marca d'água mais suave (não atrapalha leitura)
 def criar_imagem_esmaecida(input_path, output_path, opacidade=0.05):
+    """Gera versão esmaecida do logo para marca d'água. Usa getdata/putdata (PIL padrão)."""
     try:
         img = Image.open(input_path).convert("RGBA")
-        flat = img.get_flattened_data()
+        # getdata() retorna sequência de (r, g, b, a) por pixel
+        dados = list(img.getdata())
         novos_dados = []
-        for i in range(0, len(flat), 4):
-            r, g, b, a = flat[i], flat[i + 1], flat[i + 2], flat[i + 3]
-            novo_alpha = int(a * opacidade)
+        for pixel in dados:
+            if len(pixel) >= 4:
+                r, g, b, a = pixel[0], pixel[1], pixel[2], pixel[3]
+            else:
+                r, g, b = pixel[0], pixel[1], pixel[2]
+                a = 255
+            novo_alpha = max(0, min(255, int(a * opacidade)))
             novos_dados.append((r, g, b, novo_alpha))
         img.putdata(novos_dados)
         img.save(output_path, "PNG")
         return True
-    except: return False
+    except Exception:
+        return False
 
 _logo_path = Path(__file__).resolve().parent / "logo.png"
 if _logo_path.exists():
