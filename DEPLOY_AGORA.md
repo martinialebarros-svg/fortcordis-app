@@ -79,6 +79,16 @@ Aguarde alguns minutos. O app ficará em:
 
 ---
 
+## Se o app passar do limite de memória (resource limits)
+
+Para **reduzir consumo e voltar a trabalhar rápido**:
+
+1. **Commit e push** das alterações (o código já está otimizado: importação em lotes, caches limitados, marca d'água só ao gerar PDF).
+2. No **Streamlit Community Cloud** (share.streamlit.io) → seu app → **⋮ (menu)** → **Reboot app**. Isso limpa a memória e sobe o código novo.
+3. Se o backup for grande, use **backup em partes** (ver `COMO_GERAR_BACKUP.md`): execute `python exportar_backup_partes.py` no PC e importe os arquivos na ordem indicada.
+
+---
+
 ## Resumo
 
 | O que                | Onde / Como |

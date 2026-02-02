@@ -740,7 +740,7 @@ def _norm_key(s: str) -> str:
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
     return s
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner=False, max_entries=1)
 def _db_conn():
     return _db_conn_safe()
 
@@ -1149,15 +1149,7 @@ def _caminho_marca_dagua():
     return None
 
 
-_logo_path = Path(__file__).resolve().parent / "logo.png"
-if _logo_path.exists():
-    try:
-        if os.path.exists(MARCA_DAGUA_TEMP):
-            os.remove(MARCA_DAGUA_TEMP)
-    except Exception:
-        pass
-    criar_imagem_esmaecida(str(_logo_path), MARCA_DAGUA_TEMP, opacidade=0.05)
-
+# Marca d'água: criada só na primeira geração de PDF (_caminho_marca_dagua), não no startup (reduz memória no Cloud)
 # Funções de Referência (Mantidas)
 def gerar_tabela_padrao():
     data = []
@@ -1734,7 +1726,7 @@ def limpar_e_converter_tabela_felinos(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["Peso"]).sort_values("Peso").reset_index(drop=True)
     return df[colunas_esperadas]
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=3, ttl=3600)
 def carregar_tabela_referencia_felinos_cached() -> pd.DataFrame:
     """Carrega tabela felina (CSV), ou cria uma padrão se não existir."""
     if os.path.exists(ARQUIVO_REF_FELINOS):
@@ -1784,13 +1776,13 @@ def carregar_tabela_referencia():
         return df
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=3, ttl=3600)
 def carregar_tabela_referencia_cached():
     """Wrapper cacheado para evitar re-leitura do CSV a cada reinício."""
     return carregar_tabela_referencia()
 
 
-@st.cache_data(show_spinner=False, ttl=10)
+@st.cache_data(show_spinner=False, ttl=10, max_entries=10)
 def listar_registros_arquivados_cached(pasta_str: str):
     """Lê metadados dos laudos arquivados (JSON (JavaScript Object Notation)) com TTL (Time To Live)."""
     pasta = Path(pasta_str)
@@ -10500,6 +10492,7 @@ elif menu_principal == "⚙️ Configurações":
                             with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
                                 tmp.write(bytes_backup)
                                 tmp_path = tmp.name
+                            del bytes_backup  # Libera memória antes de processar (importante em Cloud)
                         try:
                             conn_backup = sqlite3.connect(tmp_path)
                             conn_backup.row_factory = sqlite3.Row
@@ -10793,76 +10786,77 @@ elif menu_principal == "⚙️ Configurações":
                             # Só processar tabelas de laudos que existem no backup (evitar "no such table")
                             cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('laudos_ecocardiograma','laudos_eletrocardiograma','laudos_pressao_arterial')")
                             tabelas_laudos_no_backup = [r[0] for r in cur_b.fetchall()]
+                            BATCH_LAUDOS_TABELAS = 30  # Processar laudos em lotes para reduzir pico de memória
                             for tabela in tabelas_laudos_no_backup:
                                 try:
                                     cur_l.execute(f"PRAGMA table_info({tabela})")
                                     colunas_destino = [c[1] for c in cur_l.fetchall()]
                                     cur_b.execute(f"SELECT * FROM {tabela}")
-                                    rows_laudo = cur_b.fetchall()
-                                    if not rows_laudo:
-                                        continue
                                     cur_b.execute(f"PRAGMA table_info({tabela})")
                                     colunas_laudo = [c[1] for c in cur_b.fetchall()]
                                     colunas_sem_id = [c for c in colunas_laudo if c != "id" and c in colunas_destino]
-                                    # Incluir nome_paciente, nome_clinica, nome_tutor do destino para preencher no INSERT (backup pode não ter essas colunas)
                                     for col_extra in ("nome_paciente", "nome_clinica", "nome_tutor"):
                                         if col_extra in colunas_destino and col_extra not in colunas_sem_id:
                                             colunas_sem_id.append(col_extra)
                                     if not colunas_sem_id:
                                         continue
-                                    for row in rows_laudo:
-                                        row_d = dict(zip(colunas_laudo, row))
-                                        old_paciente_id = int(row_d["paciente_id"]) if row_d.get("paciente_id") else None
-                                        novo_paciente_id = map_paciente.get(old_paciente_id) if old_paciente_id is not None else None
-                                        old_clinica_id = int(row_d["clinica_id"]) if row_d.get("clinica_id") else None
-                                        # Tentar clinicas_parceiras primeiro (laudos costumam apontar para elas)
-                                        novo_clinica_id = (map_clinica_parceiras.get(old_clinica_id) or map_clinica.get(old_clinica_id)) if old_clinica_id is not None else None
-                                        row_d["paciente_id"] = novo_paciente_id
-                                        row_d["clinica_id"] = novo_clinica_id
-                                        # Preencher nomes a partir do backup para clínica/animal/tutor aparecerem na tabela
-                                        if old_paciente_id is not None:
+                                    cur_b.execute(f"SELECT * FROM {tabela}")
+                                    while True:
+                                        rows_laudo = cur_b.fetchmany(BATCH_LAUDOS_TABELAS)
+                                        if not rows_laudo:
+                                            break
+                                        for row in rows_laudo:
+                                            row_d = dict(zip(colunas_laudo, row))
+                                            old_paciente_id = int(row_d["paciente_id"]) if row_d.get("paciente_id") else None
+                                            novo_paciente_id = map_paciente.get(old_paciente_id) if old_paciente_id is not None else None
+                                            old_clinica_id = int(row_d["clinica_id"]) if row_d.get("clinica_id") else None
+                                            novo_clinica_id = (map_clinica_parceiras.get(old_clinica_id) or map_clinica.get(old_clinica_id)) if old_clinica_id is not None else None
+                                            row_d["paciente_id"] = novo_paciente_id
+                                            row_d["clinica_id"] = novo_clinica_id
+                                            if old_paciente_id is not None:
+                                                try:
+                                                    r_bp = cur_b.execute("SELECT nome FROM pacientes WHERE id=?", (old_paciente_id,)).fetchone()
+                                                    if r_bp:
+                                                        row_d["nome_paciente"] = (r_bp[0] if isinstance(r_bp, (list, tuple)) else r_bp["nome"]) or ""
+                                                except Exception:
+                                                    pass
+                                            if old_clinica_id is not None:
+                                                try:
+                                                    r_bc = cur_b.execute("SELECT nome FROM clinicas WHERE id=?", (old_clinica_id,)).fetchone()
+                                                    if not r_bc:
+                                                        r_bc = cur_b.execute("SELECT nome FROM clinicas_parceiras WHERE id=?", (old_clinica_id,)).fetchone()
+                                                    if r_bc:
+                                                        row_d["nome_clinica"] = (r_bc[0] if isinstance(r_bc, (list, tuple)) else r_bc["nome"]) or ""
+                                                except Exception:
+                                                    pass
+                                            if old_paciente_id is not None:
+                                                try:
+                                                    r_bt = cur_b.execute(
+                                                        "SELECT t.nome FROM pacientes p JOIN tutores t ON t.id = p.tutor_id WHERE p.id=?",
+                                                        (old_paciente_id,),
+                                                    ).fetchone()
+                                                    if r_bt:
+                                                        row_d["nome_tutor"] = (r_bt[0] if isinstance(r_bt, (list, tuple)) else r_bt["nome"]) or ""
+                                                except Exception:
+                                                    pass
+                                            vals = []
+                                            for c in colunas_sem_id:
+                                                if c == "arquivo_xml":
+                                                    vals.append(row_d.get("arquivo_xml") or row_d.get("arquivo_json"))
+                                                elif c in ("nome_paciente", "nome_clinica", "nome_tutor"):
+                                                    vals.append(row_d.get(c) or "")
+                                                else:
+                                                    vals.append(row_d.get(c))
+                                            placeholders = ", ".join(["?" for _ in colunas_sem_id])
                                             try:
-                                                r_bp = cur_b.execute("SELECT nome FROM pacientes WHERE id=?", (old_paciente_id,)).fetchone()
-                                                if r_bp:
-                                                    row_d["nome_paciente"] = (r_bp[0] if isinstance(r_bp, (list, tuple)) else r_bp["nome"]) or ""
-                                            except Exception:
-                                                pass
-                                        if old_clinica_id is not None:
-                                            try:
-                                                r_bc = cur_b.execute("SELECT nome FROM clinicas WHERE id=?", (old_clinica_id,)).fetchone()
-                                                if not r_bc:
-                                                    r_bc = cur_b.execute("SELECT nome FROM clinicas_parceiras WHERE id=?", (old_clinica_id,)).fetchone()
-                                                if r_bc:
-                                                    row_d["nome_clinica"] = (r_bc[0] if isinstance(r_bc, (list, tuple)) else r_bc["nome"]) or ""
-                                            except Exception:
-                                                pass
-                                        if old_paciente_id is not None:
-                                            try:
-                                                r_bt = cur_b.execute(
-                                                    "SELECT t.nome FROM pacientes p JOIN tutores t ON t.id = p.tutor_id WHERE p.id=?",
-                                                    (old_paciente_id,),
-                                                ).fetchone()
-                                                if r_bt:
-                                                    row_d["nome_tutor"] = (r_bt[0] if isinstance(r_bt, (list, tuple)) else r_bt["nome"]) or ""
-                                            except Exception:
-                                                pass
-                                        vals = []
-                                        for c in colunas_sem_id:
-                                            if c == "arquivo_xml":
-                                                vals.append(row_d.get("arquivo_xml") or row_d.get("arquivo_json"))
-                                            elif c in ("nome_paciente", "nome_clinica", "nome_tutor"):
-                                                vals.append(row_d.get(c) or "")
-                                            else:
-                                                vals.append(row_d.get(c))
-                                        placeholders = ", ".join(["?" for _ in colunas_sem_id])
-                                        try:
-                                            cur_l.execute(
-                                                f"INSERT INTO {tabela} ({', '.join(colunas_sem_id)}) VALUES ({placeholders})",
-                                                vals,
-                                            )
-                                            total_l += 1
-                                        except sqlite3.OperationalError as e:
-                                            erros_import.append((f"laudos_{tabela}", str(e)))
+                                                cur_l.execute(
+                                                    f"INSERT INTO {tabela} ({', '.join(colunas_sem_id)}) VALUES ({placeholders})",
+                                                    vals,
+                                                )
+                                                total_l += 1
+                                            except sqlite3.OperationalError as e:
+                                                erros_import.append((f"laudos_{tabela}", str(e)))
+                                        conn_local.commit()
                                 except sqlite3.OperationalError as e:
                                     erros_import.append((tabela, str(e)))
                             # Preencher nome_paciente, nome_clinica e nome_tutor quando vazios (a partir das tabelas vinculadas no destino)
@@ -10888,38 +10882,48 @@ elif menu_principal == "⚙️ Configurações":
                                     cur_b.execute("SELECT * FROM laudos_arquivos")
                                     map_laudo_arq = {}
                                     BATCH_LAUDOS = 50
-                                    for i, row in enumerate(cur_b.fetchall()):
-                                        row_d = dict(zip(cols_arq, row))
-                                        old_id = row_d.get("id")
-                                        vals = [row_d.get(c) for c in cols_sem_id]
-                                        cur_l.execute(
-                                            f"INSERT INTO laudos_arquivos ({', '.join(cols_sem_id)}) VALUES ({', '.join(['?'] * len(cols_sem_id))})",
-                                            vals,
-                                        )
-                                        new_id = cur_l.lastrowid
-                                        if old_id is not None:
-                                            map_laudo_arq[int(old_id)] = new_id
-                                        total_laudos_arq += 1
-                                        if (i + 1) % BATCH_LAUDOS == 0:
-                                            conn_local.commit()
+                                    i = 0
+                                    while True:
+                                        rows_batch = cur_b.fetchmany(BATCH_LAUDOS)
+                                        if not rows_batch:
+                                            break
+                                        for row in rows_batch:
+                                            row_d = dict(zip(cols_arq, row))
+                                            old_id = row_d.get("id")
+                                            vals = [row_d.get(c) for c in cols_sem_id]
+                                            cur_l.execute(
+                                                f"INSERT INTO laudos_arquivos ({', '.join(cols_sem_id)}) VALUES ({', '.join(['?'] * len(cols_sem_id))})",
+                                                vals,
+                                            )
+                                            new_id = cur_l.lastrowid
+                                            if old_id is not None:
+                                                map_laudo_arq[int(old_id)] = new_id
+                                            total_laudos_arq += 1
+                                            i += 1
+                                        conn_local.commit()
                                     cur_b.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='laudos_arquivos_imagens'")
                                     if cur_b.fetchone():
                                         cur_b.execute("PRAGMA table_info(laudos_arquivos_imagens)")
                                         cols_img = [c[1] for c in cur_b.fetchall()]
                                         cols_img_sem_id = [c for c in cols_img if c != "id"]
                                         cur_b.execute("SELECT * FROM laudos_arquivos_imagens")
-                                        for i2, row in enumerate(cur_b.fetchall()):
-                                            row_d = dict(zip(cols_img, row))
-                                            old_laudo_id = row_d.get("laudo_arquivo_id")
-                                            new_laudo_id = map_laudo_arq.get(int(old_laudo_id)) if old_laudo_id is not None else None
-                                            if new_laudo_id is not None:
-                                                vals_img = [new_laudo_id if c == "laudo_arquivo_id" else row_d.get(c) for c in cols_img_sem_id]
-                                                cur_l.execute(
-                                                    f"INSERT INTO laudos_arquivos_imagens ({', '.join(cols_img_sem_id)}) VALUES ({', '.join(['?'] * len(cols_img_sem_id))})",
-                                                    vals_img,
-                                                )
-                                            if (i2 + 1) % BATCH_LAUDOS == 0:
-                                                conn_local.commit()
+                                        i2 = 0
+                                        while True:
+                                            rows_img_batch = cur_b.fetchmany(BATCH_LAUDOS)
+                                            if not rows_img_batch:
+                                                break
+                                            for row in rows_img_batch:
+                                                row_d = dict(zip(cols_img, row))
+                                                old_laudo_id = row_d.get("laudo_arquivo_id")
+                                                new_laudo_id = map_laudo_arq.get(int(old_laudo_id)) if old_laudo_id is not None else None
+                                                if new_laudo_id is not None:
+                                                    vals_img = [new_laudo_id if c == "laudo_arquivo_id" else row_d.get(c) for c in cols_img_sem_id]
+                                                    cur_l.execute(
+                                                        f"INSERT INTO laudos_arquivos_imagens ({', '.join(cols_img_sem_id)}) VALUES ({', '.join(['?'] * len(cols_img_sem_id))})",
+                                                        vals_img,
+                                                    )
+                                                i2 += 1
+                                            conn_local.commit()
                                 except sqlite3.OperationalError as e:
                                     erros_import.append(("laudos_arquivos", str(e)))
                             conn_local.commit()
