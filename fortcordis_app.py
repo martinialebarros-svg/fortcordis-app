@@ -614,7 +614,8 @@ if "cad_especie" not in st.session_state or not str(st.session_state.get("cad_es
 # ===============================
 # Arquivos do sistema
 # ===============================
-MARCA_DAGUA_TEMP = "temp_watermark_faded.png"
+# Marca d'água em pasta gravável (Streamlit Cloud pode ter app dir read-only)
+MARCA_DAGUA_TEMP = str(Path(tempfile.gettempdir()) / "fortcordis_watermark_faded.png")
 ARQUIVO_FRASES = str((Path.home() / "FortCordis" / "frases_personalizadas.json"))
 Path(ARQUIVO_FRASES).parent.mkdir(parents=True, exist_ok=True)
 
@@ -1114,8 +1115,8 @@ def normalizar_especie_label(especie_txt: str) -> str:
 
 
 
-# Função de imagem (Mantida)
-def criar_imagem_esmaecida(input_path, output_path, opacidade=0.10):
+# Função de imagem (Mantida) — opacidade baixa = marca d'água mais suave (não atrapalha leitura)
+def criar_imagem_esmaecida(input_path, output_path, opacidade=0.05):
     try:
         img = Image.open(input_path).convert("RGBA")
         flat = img.get_flattened_data()
@@ -1129,11 +1130,14 @@ def criar_imagem_esmaecida(input_path, output_path, opacidade=0.10):
         return True
     except: return False
 
-if os.path.exists("logo.png"):
-    if os.path.exists(MARCA_DAGUA_TEMP):
-        try: os.remove(MARCA_DAGUA_TEMP)
-        except: pass
-    criar_imagem_esmaecida("logo.png", MARCA_DAGUA_TEMP, opacidade=0.10)
+_logo_path = Path(__file__).resolve().parent / "logo.png"
+if _logo_path.exists():
+    try:
+        if os.path.exists(MARCA_DAGUA_TEMP):
+            os.remove(MARCA_DAGUA_TEMP)
+    except Exception:
+        pass
+    criar_imagem_esmaecida(str(_logo_path), MARCA_DAGUA_TEMP, opacidade=0.05)
 
 # Funções de Referência (Mantidas)
 def gerar_tabela_padrao():
@@ -4224,7 +4228,7 @@ if "lista_especies" not in st.session_state:
 if "cad_especie" not in st.session_state or not str(st.session_state.get("cad_especie") or "").strip():
     st.session_state["cad_especie"] = "Canina"
 
-MARCA_DAGUA_TEMP = "temp_watermark_faded.png"
+# MARCA_DAGUA_TEMP já definido no início do arquivo (pasta temp + opacidade 0.05)
 ARQUIVO_FRASES = str((Path.home() / "FortCordis" / "frases_personalizadas.json"))
 Path(ARQUIVO_FRASES).parent.mkdir(parents=True, exist_ok=True)
 ARQUIVO_REF = "tabela_referencia.csv"
