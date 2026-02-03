@@ -13,10 +13,14 @@ app/
   laudos_helpers.py  # QUALI_DET, frases, listar/obter laudos do banco, schema det
   ESTRUTURA_MODULOS.md
   pages/
-    __init__.py      # exporta render_dashboard, render_agendamentos, render_laudos
+    __init__.py      # exporta render_dashboard, render_agendamentos, render_laudos, render_prontuario, render_prescricoes, render_financeiro, render_cadastros
     dashboard.py     # render_dashboard()
     agendamentos.py  # render_agendamentos()
-    laudos.py        # render_laudos() — Cadastro, Medidas, Qualitativa, Imagens, Frases, Referências, Buscar, Pressão Arterial
+    laudos.py        # render_laudos(deps) — 8 abas Laudos e Exames
+    prontuario.py    # render_prontuario()
+    prescricoes.py   # render_prescricoes()
+    financeiro.py    # render_financeiro()
+    cadastros.py     # render_cadastros()
 ```
 
 ## O que já foi extraído
@@ -25,12 +29,16 @@ app/
 - **Banco local**: conexão segura e upserts de clínicas/tutores/pacientes em `app.db`; o `fortcordis_app.py` importa e usa.
 - **Dashboard**: tela "🏠 Dashboard" está em `app.pages.dashboard`; o app chama `render_dashboard()`.
 - **Agendamentos**: tela "📅 Agendamentos" está em `app.pages.agendamentos`; o app chama `render_agendamentos()`.
-- **Laudos e Exames**: tela "🩺 Laudos e Exames" está em `app.pages.laudos`; o app chama `render_laudos()`. Helpers de frases/banco em `app.laudos_helpers`.
+- **Laudos e Exames**: tela "🩺 Laudos e Exames" está em `app.pages.laudos`; o app chama `render_laudos(laudos_deps)`. Helpers em `app.laudos_helpers`.
+- **Prontuário**: tela "📋 Prontuário" está em `app.pages.prontuario`; o app chama `render_prontuario()`.
+- **Prescrições**: tela "💊 Prescrições" está em `app.pages.prescricoes`; o app chama `render_prescricoes()`.
+- **Financeiro**: tela "💰 Financeiro" está em `app.pages.financeiro`; o app chama `render_financeiro()`.
+- **Cadastros**: tela "🏢 Cadastros" está em `app.pages.cadastros`; o app chama `render_cadastros()`.
 
 ## O que ainda está no fortcordis_app.py
 
-- Prontuário, Prescrições, Financeiro, Cadastros e Configurações continuam como blocos `elif menu_principal == ...` no arquivo principal.
-- Funções de laudos usadas pela página (PARAMS, referências, PDF, tabelas, etc.) permanecem no `fortcordis_app.py` e são importadas via lazy import em `render_laudos()`.
+- **Configurações** continua como bloco `elif menu_principal == "⚙️ Configurações"` (muito grande; pode ser extraído depois).
+- Funções de laudos usadas pela página Laudos (PARAMS, referências, PDF, etc.) permanecem no `fortcordis_app.py` e são passadas via `laudos_deps`.
 
 ## Próximos passos (quebrar mais)
 
