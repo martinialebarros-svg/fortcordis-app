@@ -5329,8 +5329,39 @@ elif menu_principal == "📋 Prontuário":
     # FIM DAS FUNÇÕES DE GERENCIAMENTO
     # ============================================================================
 elif menu_principal == "🩺 Laudos e Exames":
+    from types import SimpleNamespace
     from app.pages.laudos import render_laudos
-    render_laudos()
+    laudos_deps = SimpleNamespace(
+        PASTA_LAUDOS=PASTA_LAUDOS,
+        ARQUIVO_REF=ARQUIVO_REF,
+        ARQUIVO_REF_FELINOS=ARQUIVO_REF_FELINOS,
+        PARAMS=PARAMS,
+        get_grupos_por_especie=get_grupos_por_especie,
+        normalizar_especie_label=normalizar_especie_label,
+        montar_nome_base_arquivo=montar_nome_base_arquivo,
+        calcular_referencia_tabela=calcular_referencia_tabela,
+        interpretar=interpretar,
+        interpretar_divedn=interpretar_divedn,
+        DIVEDN_REF_TXT=DIVEDN_REF_TXT,
+        listar_registros_arquivados_cached=listar_registros_arquivados_cached,
+        salvar_laudo_no_banco=salvar_laudo_no_banco,
+        obter_imagens_para_pdf=obter_imagens_para_pdf,
+        montar_qualitativa=montar_qualitativa,
+        _caminho_marca_dagua=_caminho_marca_dagua,
+        montar_chave_frase=montar_chave_frase,
+        carregar_frases=carregar_frases,
+        gerar_tabela_padrao=gerar_tabela_padrao,
+        gerar_tabela_padrao_felinos=gerar_tabela_padrao_felinos,
+        limpar_e_converter_tabela=limpar_e_converter_tabela,
+        limpar_e_converter_tabela_felinos=limpar_e_converter_tabela_felinos,
+        carregar_tabela_referencia_cached=carregar_tabela_referencia_cached,
+        carregar_tabela_referencia_felinos_cached=carregar_tabela_referencia_felinos_cached,
+        _normalizar_data_str=_normalizar_data_str,
+        especie_is_felina=especie_is_felina,
+        calcular_valor_final=calcular_valor_final,
+        gerar_numero_os=gerar_numero_os,
+    )
+    render_laudos(laudos_deps)
 
 
 

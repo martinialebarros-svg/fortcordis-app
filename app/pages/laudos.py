@@ -32,37 +32,39 @@ from app.laudos_helpers import (
 from modules.rbac import verificar_permissao
 
 
-def render_laudos():
-    # Lazy import para evitar import circular (fortcordis_app importa este módulo)
-    import fortcordis_app as _app
-    PASTA_LAUDOS = _app.PASTA_LAUDOS
-    ARQUIVO_REF = _app.ARQUIVO_REF
-    ARQUIVO_REF_FELINOS = _app.ARQUIVO_REF_FELINOS
-    PARAMS = _app.PARAMS
-    get_grupos_por_especie = _app.get_grupos_por_especie
-    normalizar_especie_label = _app.normalizar_especie_label
-    montar_nome_base_arquivo = _app.montar_nome_base_arquivo
-    calcular_referencia_tabela = _app.calcular_referencia_tabela
-    interpretar = _app.interpretar
-    interpretar_divedn = _app.interpretar_divedn
-    DIVEDN_REF_TXT = _app.DIVEDN_REF_TXT
-    listar_registros_arquivados_cached = _app.listar_registros_arquivados_cached
-    salvar_laudo_no_banco = _app.salvar_laudo_no_banco
-    obter_imagens_para_pdf = _app.obter_imagens_para_pdf
-    montar_qualitativa = _app.montar_qualitativa
-    _caminho_marca_dagua = _app._caminho_marca_dagua
-    montar_chave_frase = _app.montar_chave_frase
-    carregar_frases = _app.carregar_frases
-    gerar_tabela_padrao = _app.gerar_tabela_padrao
-    gerar_tabela_padrao_felinos = _app.gerar_tabela_padrao_felinos
-    limpar_e_converter_tabela = _app.limpar_e_converter_tabela
-    limpar_e_converter_tabela_felinos = _app.limpar_e_converter_tabela_felinos
-    carregar_tabela_referencia_cached = _app.carregar_tabela_referencia_cached
-    carregar_tabela_referencia_felinos_cached = _app.carregar_tabela_referencia_felinos_cached
-    _normalizar_data_str = _app._normalizar_data_str
-    especie_is_felina = _app.especie_is_felina
-    calcular_valor_final = _app.calcular_valor_final
-    gerar_numero_os = _app.gerar_numero_os
+def render_laudos(deps):
+    """
+    Renderiza a página Laudos e Exames.
+    deps: namespace com PASTA_LAUDOS, PARAMS, carregar_frases, etc. (passado pelo fortcordis_app para evitar import circular).
+    """
+    PASTA_LAUDOS = deps.PASTA_LAUDOS
+    ARQUIVO_REF = deps.ARQUIVO_REF
+    ARQUIVO_REF_FELINOS = deps.ARQUIVO_REF_FELINOS
+    PARAMS = deps.PARAMS
+    get_grupos_por_especie = deps.get_grupos_por_especie
+    normalizar_especie_label = deps.normalizar_especie_label
+    montar_nome_base_arquivo = deps.montar_nome_base_arquivo
+    calcular_referencia_tabela = deps.calcular_referencia_tabela
+    interpretar = deps.interpretar
+    interpretar_divedn = deps.interpretar_divedn
+    DIVEDN_REF_TXT = deps.DIVEDN_REF_TXT
+    listar_registros_arquivados_cached = deps.listar_registros_arquivados_cached
+    salvar_laudo_no_banco = deps.salvar_laudo_no_banco
+    obter_imagens_para_pdf = deps.obter_imagens_para_pdf
+    montar_qualitativa = deps.montar_qualitativa
+    _caminho_marca_dagua = deps._caminho_marca_dagua
+    montar_chave_frase = deps.montar_chave_frase
+    carregar_frases = deps.carregar_frases
+    gerar_tabela_padrao = deps.gerar_tabela_padrao
+    gerar_tabela_padrao_felinos = deps.gerar_tabela_padrao_felinos
+    limpar_e_converter_tabela = deps.limpar_e_converter_tabela
+    limpar_e_converter_tabela_felinos = deps.limpar_e_converter_tabela_felinos
+    carregar_tabela_referencia_cached = deps.carregar_tabela_referencia_cached
+    carregar_tabela_referencia_felinos_cached = deps.carregar_tabela_referencia_felinos_cached
+    _normalizar_data_str = deps._normalizar_data_str
+    especie_is_felina = deps.especie_is_felina
+    calcular_valor_final = deps.calcular_valor_final
+    gerar_numero_os = deps.gerar_numero_os
 
     sb_patologia = st.session_state.get("sb_patologia", "Normal")
     sb_grau_refluxo = st.session_state.get("sb_grau_refluxo", "Leve")
