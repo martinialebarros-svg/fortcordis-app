@@ -1,0 +1,59 @@
+# Estrutura de Módulos do FortCordis
+
+O `fortcordis_app.py` foi parcialmente quebrado em módulos. Esta pasta `app/` concentra config, banco e páginas.
+
+## Estrutura atual
+
+```
+app/
+  __init__.py
+  config.py          # VERSAO_DEPLOY, DB_PATH, PASTA_DB, CSS_GLOBAL
+  utils.py            # nome_proprio_ptbr, _norm_key, _clean_spaces (uso em db e laudos)
+  db.py               # _db_conn_safe, _db_conn, _db_init, db_upsert_clinica/tutor/paciente
+  ESTRUTURA_MODULOS.md
+  pages/
+    __init__.py      # exporta render_dashboard, render_agendamentos
+    dashboard.py     # render_dashboard()
+    agendamentos.py  # render_agendamentos()
+```
+
+## O que já foi extraído
+
+- **Config**: versão, caminho do banco e CSS vêm de `app.config`.
+- **Banco local**: conexão segura e upserts de clínicas/tutores/pacientes em `app.db`; o `fortcordis_app.py` importa e usa.
+- **Dashboard**: tela "🏠 Dashboard" está em `app.pages.dashboard`; o app chama `render_dashboard()`.
+- **Agendamentos**: tela "📅 Agendamentos" está em `app.pages.agendamentos`; o app chama `render_agendamentos()`.
+
+## O que ainda está no fortcordis_app.py
+
+- Prontuário, Laudos e Exames, Prescrições, Financeiro, Cadastros e Configurações continuam como blocos `elif menu_principal == ...` no arquivo principal.
+- Todas as funções de laudos (PDF, frases, tabelas de referência, etc.) e o restante dos helpers ainda estão no `fortcordis_app.py`.
+
+## Próximos passos (quebrar mais)
+
+1. **Prontuário**  
+   Criar `app/pages/prontuario.py` com `render_prontuario()`, movendo o bloco correspondente e importando o que for necessário (por exemplo `verificar_permissao`, `DB_PATH`, funções de listagem de laudos se usadas).
+
+2. **Laudos**  
+   Criar `app/laudos_helpers.py` (ou pacote `app/laudos/`) com as funções específicas de laudos (salvar/buscar laudos, PDF, frases, referências). Depois criar `app/pages/laudos.py` que importa esses helpers e implementa `render_laudos()`.
+
+3. **Prescrições, Financeiro, Cadastros, Configurações**  
+   Seguir o mesmo padrão: novo arquivo em `app/pages/` com `render_*()` e movendo o bloco do menu do `fortcordis_app.py` para esse módulo.
+
+4. **Enxugar o app principal**  
+   Quando todas as telas estiverem em `app.pages`, o `fortcordis_app.py` deve ficar só com:
+   - imports e `set_page_config`
+   - CSS e botões de emergência
+   - path e auth (login, `mostrar_info_usuario`)
+   - menu na sidebar
+   - sequência de `if menu_principal == ...: render_*()`.
+
+## Como rodar
+
+Nada muda para o usuário:
+
+```bash
+streamlit run fortcordis_app.py
+```
+
+O app continua funcionando; Dashboard e Agendamentos passam a ser renderizados pelos módulos em `app/pages/`.

@@ -44,7 +44,8 @@ $bancos = Get-ChildItem -Path $pastaProjeto -Include "fortcordis.db","*.sqlite",
 $bancoPrincipal = $bancos | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($bancoPrincipal) {
     $nomeDb = "fortcordis_prod_${Data}_${timestamp}.sqlite"
-    Copy-Item $bancoPrincipal.FullName (Join-Path $destino "db" $nomeDb)
+    $destinoDb = Join-Path (Join-Path $destino "db") $nomeDb
+    Copy-Item $bancoPrincipal.FullName $destinoDb
     Write-Host "OK: db/$nomeDb" -ForegroundColor Green
 } else {
     Write-Host "AVISO: Nenhum banco fortcordis.db/*.sqlite encontrado na pasta do projeto." -ForegroundColor Yellow
