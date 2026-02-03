@@ -1,6 +1,12 @@
 # Banco de dados (não subir para o repositório)
 fortcordis.db
 *.db
+*.sqlite
+*.sqlite3
+backup_*.sqlite
+backup_*.db
+FORTCORDIS_RESTORE_POINT_*/
+fortcordis_code_restore_*.zip
 
 # Python
 __pycache__/

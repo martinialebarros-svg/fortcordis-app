@@ -588,44 +588,51 @@ def criar_usuario_admin_inicial():
     """
     Cria o usuário admin padrão se não existir nenhum.
     ATENÇÃO: Executar apenas na primeira instalação!
-    
-    Credenciais:
-        Email: admin@fortcordis.com
-        Senha: Admin@2026
-        
-    ⚠️ ALTERE ESTA SENHA IMEDIATAMENTE APÓS O PRIMEIRO LOGIN!
+
+    A senha NÃO é mais hardcoded. Use uma das opções:
+    1) Variável de ambiente ADMIN_INITIAL_PASSWORD (recomendado em servidor/CI)
+    2) Se não houver usuários e ADMIN_INITIAL_PASSWORD não estiver definida,
+       nenhum admin é criado aqui — use a tela de login "Criar primeiro usuário".
+
+    Email do admin inicial: admin@fortcordis.com
+    ⚠️ Altere a senha imediatamente após o primeiro login!
     """
     conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
-    
-    # Verifica se já existe algum usuário
+
     cursor.execute("SELECT COUNT(*) FROM usuarios")
     count = cursor.fetchone()[0]
-    
+    conn.close()
+
     if count > 0:
-        conn.close()
         print("ℹ️ Já existem usuários no sistema. Admin inicial não criado.")
         return False, "Já existem usuários"
-    
-    conn.close()
-    
-    # Cria admin
+
+    senha_admin = os.environ.get("ADMIN_INITIAL_PASSWORD", "").strip()
+    if not senha_admin:
+        print("ℹ️ ADMIN_INITIAL_PASSWORD não definida. Crie o primeiro usuário pela tela de login (Criar primeiro usuário).")
+        return False, "Sem senha configurada"
+
+    if len(senha_admin) < 8:
+        print("⚠️ ADMIN_INITIAL_PASSWORD deve ter no mínimo 8 caracteres. Admin inicial não criado.")
+        return False, "Senha inválida"
+
     sucesso, msg, _, _ = criar_usuario(
         nome="Administrador",
         email="admin@fortcordis.com",
-        senha="Admin@2026",
+        senha=senha_admin,
         papel="admin"
     )
-    
+
     if sucesso:
         print("\n" + "="*70)
         print("🔐 USUÁRIO ADMIN CRIADO COM SUCESSO!")
         print("="*70)
         print("Email: admin@fortcordis.com")
-        print("Senha: Admin@2026")
+        print("Senha: (definida por ADMIN_INITIAL_PASSWORD)")
         print("\n⚠️  ALTERE ESTA SENHA IMEDIATAMENTE APÓS O PRIMEIRO LOGIN!")
         print("="*70 + "\n")
-    
+
     return sucesso, msg
 
 
@@ -674,8 +681,9 @@ if __name__ == "__main__":
     print("\n✅ Sistema de autenticação pronto para uso!")
     print("\nPróximos passos:")
     print("1. Execute o fortcordis_app.py")
-    print("2. Faça login com admin@fortcordis.com / Admin@2026")
-    print("3. ALTERE A SENHA IMEDIATAMENTE!")
+    print("2. Se definiu ADMIN_INITIAL_PASSWORD: faça login com admin@fortcordis.com e essa senha.")
+    print("   Caso contrário: na tela de login use 'Criar primeiro usuário' para criar o admin.")
+    print("3. ALTERE A SENHA IMEDIATAMENTE após o primeiro login!")
     print("4. Crie outros usuários conforme necessário\n")
 
 # ============================================================================

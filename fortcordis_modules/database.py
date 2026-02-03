@@ -19,9 +19,23 @@ else:
 if DB_PATH.parent != Path("."):
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+
+def get_conn(timeout_seconds=15):
+    """
+    Retorna uma conexão SQLite centralizada com:
+    - foreign_keys=ON (integridade referencial)
+    - journal_mode=WAL (melhor concorrência)
+    - timeout maior (evita locked em escritas concorrentes)
+    """
+    conn = sqlite3.connect(str(DB_PATH), timeout=timeout_seconds)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
 def inicializar_banco():
     """Inicializa todas as tabelas do banco de dados"""
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     
     # Tabela de Clínicas Parceiras
@@ -337,7 +351,7 @@ def garantir_colunas_financeiro():
     Garante que a tabela financeiro exista e tenha as colunas usadas pelo sistema.
     Útil quando o banco foi criado por outra versão ou em outro path.
     """
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='financeiro'")
@@ -409,7 +423,7 @@ def garantir_colunas_agendamentos():
     Garante que a tabela agendamentos exista e tenha as colunas usadas pelo sistema.
     Útil quando o banco foi criado por outra versão (ex.: coluna data_agendamento em vez de data).
     """
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='agendamentos'")
@@ -472,7 +486,7 @@ def garantir_colunas_agendamentos():
 
 def gerar_numero_os():
     """Gera número único de Ordem de Serviço"""
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM financeiro")
     count = cursor.fetchone()[0]
@@ -484,7 +498,7 @@ def calcular_valor_final(servico_id, clinica_id):
     Calcula o valor final do serviço aplicando descontos da clínica.
     Retorna: (valor_base, valor_desconto, valor_final)
     """
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     
     # Busca valor base do serviço
@@ -528,7 +542,7 @@ def calcular_valor_final(servico_id, clinica_id):
 
 def registrar_cobranca_automatica(agendamento_id, clinica_id, servicos_ids):
     """Registra cobrança automaticamente após conclusão do atendimento"""
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     
     valor_bruto = 0.0
@@ -573,7 +587,7 @@ def dar_baixa_os(financeiro_id, data_pagamento=None, forma_pagamento=None):
     Retorna True se atualizou, False se não encontrou ou já estava paga.
     """
     garantir_colunas_financeiro()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     data_pag = data_pagamento or datetime.now().strftime("%Y-%m-%d")
     forma = forma_pagamento or "Não informado"
@@ -591,7 +605,7 @@ def dar_baixa_os(financeiro_id, data_pagamento=None, forma_pagamento=None):
 def excluir_os(financeiro_id):
     """Remove uma ordem de serviço (OS) do financeiro. Retorna True se removeu, False caso contrário."""
     garantir_colunas_financeiro()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM financeiro WHERE id = ?", (financeiro_id,))
@@ -608,7 +622,7 @@ def excluir_os(financeiro_id):
 def listar_financeiro_pendentes():
     """Retorna lista de OS pendentes (para cobrança / dar baixa)."""
     garantir_colunas_financeiro()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
@@ -645,7 +659,7 @@ def listar_financeiro_pendentes():
 
 def atualizar_status_acompanhamentos():
     """Atualiza status dos acompanhamentos baseado nas datas"""
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     
     hoje = datetime.now().date()
@@ -691,7 +705,7 @@ def _col_data_agendamentos(cursor):
 def criar_agendamento(data, hora, paciente, tutor, telefone, servico, clinica, observacoes="", status="Agendado", criado_por_id=None, criado_por_nome=None):
     """Cria um novo agendamento. Usa a coluna de data existente (data ou data_agendamento). Registra quem criou e quando."""
     garantir_colunas_agendamentos()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     col_data = _col_data_agendamentos(cursor)
     criado_em = datetime.now().isoformat()
@@ -715,7 +729,7 @@ def criar_agendamento(data, hora, paciente, tutor, telefone, servico, clinica, o
 def listar_agendamentos(data_inicio=None, data_fim=None, status=None, clinica=None):
     """Lista agendamentos com filtros opcionais. Tolerante a coluna data ou data_agendamento."""
     garantir_colunas_agendamentos()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     try:
         cursor.execute("PRAGMA table_info(agendamentos)")
@@ -767,7 +781,7 @@ def listar_agendamentos(data_inicio=None, data_fim=None, status=None, clinica=No
 def atualizar_agendamento(agendamento_id, **kwargs):
     """Atualiza um agendamento existente. Usa a coluna de data existente (data ou data_agendamento)."""
     garantir_colunas_agendamentos()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     col_data = _col_data_agendamentos(cursor)
     # Campos permitidos: mapear 'data' para o nome real da coluna; inclui confirmação (quem e quando)
@@ -799,7 +813,7 @@ def atualizar_agendamento(agendamento_id, **kwargs):
 
 def deletar_agendamento(agendamento_id):
     """Deleta um agendamento e as OS (cobranças) vinculadas no financeiro."""
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM financeiro WHERE agendamento_id = ?", (agendamento_id,))
@@ -817,7 +831,7 @@ def deletar_agendamento(agendamento_id):
 def buscar_agendamento_por_id(agendamento_id):
     """Busca um agendamento específico por ID. Retorna dict com chave 'data' (normalizado)."""
     garantir_colunas_agendamentos()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM agendamentos WHERE id = ?", (agendamento_id,))
     row = cursor.fetchone()
@@ -865,7 +879,7 @@ def criar_os_ao_marcar_realizado(agendamento_id):
     clinica_nome = (agend.get("clinica") or "").strip()
     if not clinica_nome:
         return None, "Agendamento sem clínica informada."
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -909,7 +923,7 @@ def criar_os_ao_marcar_realizado(agendamento_id):
 def contar_agendamentos_por_status():
     """Retorna contagem de agendamentos por status. Usa coluna data ou data_agendamento."""
     garantir_colunas_agendamentos()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_conn()
     cursor = conn.cursor()
     col_data = _col_data_agendamentos(cursor)
     try:

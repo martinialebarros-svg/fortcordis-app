@@ -1,0 +1,42 @@
+================================================================================
+FortCordis — Instruções de Restauração (Ponto de Restauração)
+================================================================================
+Data deste modelo: 2026-02-02
+
+Para restaurar o sistema a partir deste pacote:
+
+1) CÓDIGO
+   - Descompacte code_snapshot.zip em uma pasta limpa (ou use: git clone + checkout da TAG).
+   - Se usou git archive: unzip code_snapshot.zip -d FortCordis_Novo && cd FortCordis_Novo
+
+2) BANCO DE DADOS
+   - Copie o arquivo de db/ para a raiz do projeto como fortcordis.db
+   - Exemplo (PowerShell): Copy-Item ".\db\fortcordis_prod_*.sqlite" ".\fortcordis.db"
+   - Exemplo (bash): cp db/fortcordis_prod_*.sqlite fortcordis.db
+
+3) CONFIGURAÇÃO
+   - Copie config/config.toml para .streamlit/config.toml
+   - Copie config/secrets.template.toml para .streamlit/secrets.toml e preencha
+     apenas no ambiente de destino (nunca commite secrets.toml com credenciais).
+
+4) PASTAS DE DADOS (se existir pasta data/)
+   - Copie uploads/, anexos/, templates/ etc. para a raiz do projeto conforme
+     usado pelo app.
+
+5) AMBIENTE PYTHON
+   - Crie um venv: python -m venv .venv
+   - Ative e instale: pip install -r requirements.txt
+   - Opcional: defina FORTCORDIS_DB_PATH para o caminho absoluto do fortcordis.db
+
+6) TESTE
+   - Execute: streamlit run fortcordis_app.py
+   - Confirme: login, dados (agenda/financeiro/pacientes), geração de documentos.
+
+7) SEGURANÇA
+   - Altere a senha do administrador após o primeiro login.
+   - Se usar admin inicial por variável de ambiente, defina ADMIN_INITIAL_PASSWORD
+     apenas na primeira execução e remova depois.
+
+================================================================================
+Estratégia 3-2-1: 3 cópias | 2 locais diferentes | 1 fora do ambiente
+================================================================================
