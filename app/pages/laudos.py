@@ -1840,15 +1840,19 @@ def render_laudos(deps=None):
             ALT_LINHA  = 6
             ESPACO_POS = 2
 
-            def cabecalho_tabela(titulo):
+            def cabecalho_tabela(titulo, sem_ref_interp=False):
+                """sem_ref_interp=True: só Parâmetro e Valor (ex.: VE - Modo M no PDF)."""
                 pdf.set_fill_color(50,50,60); pdf.set_text_color(255); pdf.set_font("Arial",'B',10)
                 pdf.cell(0, ALT_TITULO, pdf_safe(f"  {titulo}"), ln=1, fill=True)
 
                 pdf.set_fill_color(220); pdf.set_text_color(0); pdf.set_font("Arial",'B',9)
                 pdf.cell(60, ALT_CABEC, "  Parâmetro", 0, fill=True)
                 pdf.cell(30, ALT_CABEC, "Valor", 0, align='C', fill=True)
-                pdf.cell(45, ALT_CABEC, "Referência", 0, align='C', fill=True)
-                pdf.cell(0,  ALT_CABEC, "Interpretação", 0, ln=1, align='C', fill=True)
+                if not sem_ref_interp:
+                    pdf.cell(45, ALT_CABEC, "Referência", 0, align='C', fill=True)
+                    pdf.cell(0,  ALT_CABEC, "Interpretação", 0, ln=1, align='C', fill=True)
+                else:
+                    pdf.cell(0,  ALT_CABEC, "", 0, ln=1, align='C', fill=True)
 
                 pdf.set_font("Arial",'',9)
 
@@ -1856,12 +1860,14 @@ def render_laudos(deps=None):
                 is_felina_pdf = especie_is_felina(especie)
                 df_ref_pdf = st.session_state.get("df_ref_felinos") if is_felina_pdf else st.session_state.get("df_ref")
                 is_grupo_ve_mm = str(titulo or "").strip().lower().startswith("ve - modo m")
+                # No PDF: VE - Modo M sem colunas Referência e Interpretação
+                sem_ref_interp_pdf = is_grupo_ve_mm
                 # garante que título + cabeçalho + 1 linha caibam juntos
                 min_bloco = ALT_TITULO + ALT_CABEC + ALT_LINHA + ESPACO_POS
                 garantir_espaco(min_bloco)
 
-                # imprime título + cabeçalho
-                cabecalho_tabela(titulo)
+                # imprime título + cabeçalho (2 ou 4 colunas)
+                cabecalho_tabela(titulo, sem_ref_interp=sem_ref_interp_pdf)
 
                 fill = False
                 for k in chaves:
@@ -1870,41 +1876,42 @@ def render_laudos(deps=None):
 
                     label, un, ref_key = PARAMS[k]
                     v = float(dados.get(k, 0.0))
-                    if k == "DIVEdN":
-                        txt_ref = DIVEDN_REF_TXT
-                        interp = interpretar_divedn(v)
-                    elif k == "LA_FS":
-                        txt_ref = "21 a 25 %"
-                        if v <= 0:
-                            interp = ""
-                        elif v < 21:
-                            interp = "Abaixo da referência"
-                        elif v > 25:
-                            interp = "Acima da referência"
+                    if not sem_ref_interp_pdf:
+                        if k == "DIVEdN":
+                            txt_ref = DIVEDN_REF_TXT
+                            interp = interpretar_divedn(v)
+                        elif k == "LA_FS":
+                            txt_ref = "21 a 25 %"
+                            if v <= 0:
+                                interp = ""
+                            elif v < 21:
+                                interp = "Abaixo da referência"
+                            elif v > 25:
+                                interp = "Acima da referência"
+                            else:
+                                interp = "Dentro da referência"
+                        elif k == "AURICULAR_FLOW":
+                            txt_ref = "> 0,25 m/s"
+                            if v <= 0:
+                                interp = ""
+                            elif v <= 0.25:
+                                interp = "Abaixo da referência"
+                            else:
+                                interp = "Dentro da referência"
+                        elif k == "EEp":
+                            txt_ref = "<12"
+                            if v <= 0:
+                                interp = ""
+                            elif v < 12:
+                                interp = "Normal"
+                            else:
+                                interp = "Aumentado"
+                        elif ref_key:
+                            ref, txt_ref = calcular_referencia_tabela(ref_key, peso, df=df_ref_pdf)
+                            interp = interpretar(v, ref)
                         else:
-                            interp = "Dentro da referência"
-                    elif k == "AURICULAR_FLOW":
-                        txt_ref = "> 0,25 m/s"
-                        if v <= 0:
+                            txt_ref = "--"
                             interp = ""
-                        elif v <= 0.25:
-                            interp = "Abaixo da referência"
-                        else:
-                            interp = "Dentro da referência"
-                    elif k == "EEp":
-                        txt_ref = "<12"
-                        if v <= 0:
-                            interp = ""
-                        elif v < 12:
-                            interp = "Normal"
-                        else:
-                            interp = "Aumentado"
-                    elif ref_key:
-                        ref, txt_ref = calcular_referencia_tabela(ref_key, peso, df=df_ref_pdf)
-                        interp = interpretar(v, ref)
-                    else:
-                        txt_ref = "--"
-                        interp = ""
 
                     pdf.set_fill_color(245) if fill else pdf.set_fill_color(255)
                     pdf.cell(65, ALT_LINHA, pdf_safe(f"  {label}"), 0, fill=fill)
@@ -1914,8 +1921,11 @@ def render_laudos(deps=None):
                     else:
                         vtxt = f"{v:.2f} {un}".strip()
                     pdf.cell(30, ALT_LINHA, pdf_safe(vtxt), 0, align='C', fill=fill)
-                    pdf.cell(40, ALT_LINHA, pdf_safe(txt_ref), 0, align='C', fill=fill)
-                    pdf.cell(0,  ALT_LINHA, pdf_safe(interp), 0, ln=1, align='C', fill=fill)
+                    if sem_ref_interp_pdf:
+                        pdf.cell(0, ALT_LINHA, "", 0, ln=1, fill=fill)
+                    else:
+                        pdf.cell(40, ALT_LINHA, pdf_safe(txt_ref), 0, align='C', fill=fill)
+                        pdf.cell(0,  ALT_LINHA, pdf_safe(interp), 0, ln=1, align='C', fill=fill)
 
                     fill = not fill
 
