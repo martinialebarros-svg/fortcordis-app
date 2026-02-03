@@ -32,11 +32,14 @@ from app.laudos_helpers import (
 from modules.rbac import verificar_permissao
 
 
-def render_laudos(deps):
+def render_laudos(deps=None):
     """
     Renderiza a página Laudos e Exames.
     deps: namespace com PASTA_LAUDOS, PARAMS, carregar_frases, etc. (passado pelo fortcordis_app para evitar import circular).
     """
+    if deps is None:
+        st.error("Laudos: configuração não fornecida. Faça commit e redeploy do app (fortcordis_app.py e app/pages/laudos.py).")
+        return
     PASTA_LAUDOS = deps.PASTA_LAUDOS
     ARQUIVO_REF = deps.ARQUIVO_REF
     ARQUIVO_REF_FELINOS = deps.ARQUIVO_REF_FELINOS

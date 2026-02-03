@@ -5361,7 +5361,14 @@ elif menu_principal == "🩺 Laudos e Exames":
         calcular_valor_final=calcular_valor_final,
         gerar_numero_os=gerar_numero_os,
     )
-    render_laudos(laudos_deps)
+    try:
+        render_laudos(laudos_deps)
+    except TypeError:
+        st.error(
+            "**Laudos: versão desatualizada no servidor.** O módulo Laudos no deploy não está alinhado com o app. "
+            "Confirme que **app/pages/laudos.py** está commitado com a assinatura `def render_laudos(deps=None)`, "
+            "faça **push** e aguarde o redeploy no Streamlit Cloud (ou use *Manage app* → *Reboot*)."
+        )
 
 
 
