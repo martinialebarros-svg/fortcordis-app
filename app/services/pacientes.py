@@ -97,6 +97,49 @@ def buscar_pacientes(
         conn.close()
 
 
+def buscar_pacientes_para_vinculo(
+    nome_animal: Optional[str] = None,
+    nome_tutor: Optional[str] = None,
+    limite: int = 15,
+) -> list:
+    """
+    Busca pacientes por nome do animal e/ou nome do tutor para vincular exame
+    a um cadastro existente (evitar duplicata ao importar XML).
+    Retorna lista de dicts: [{"id": paciente_id, "tutor_id": int, "paciente": str, "tutor": str}, ...].
+    """
+    if not nome_animal and not nome_tutor:
+        return []
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        query = """
+            SELECT p.id, p.tutor_id, p.nome as paciente, t.nome as tutor
+            FROM pacientes p
+            LEFT JOIN tutores t ON p.tutor_id = t.id
+            WHERE (p.ativo = 1 OR p.ativo IS NULL)
+        """
+        params = []
+        if nome_animal:
+            query += " AND (UPPER(p.nome) LIKE UPPER(?) OR UPPER(p.nome) = UPPER(?))"
+            termo = (nome_animal.strip() if nome_animal else "")
+            params.append(f"%{termo}%")
+            params.append(termo)
+        if nome_tutor:
+            query += " AND (UPPER(t.nome) LIKE UPPER(?) OR UPPER(t.nome) = UPPER(?))"
+            termo_t = (nome_tutor.strip() if nome_tutor else "")
+            params.append(f"%{termo_t}%")
+            params.append(termo_t)
+        query += " ORDER BY t.nome, p.nome LIMIT ?"
+        params.append(limite)
+        cursor = conn.execute(query, params)
+        rows = cursor.fetchall()
+        return [
+            {"id": r[0], "tutor_id": r[1], "paciente": r[2] or "", "tutor": r[3] or ""}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
 def atualizar_peso_paciente(paciente_id: int, peso_kg: float) -> bool:
     """Atualiza o peso do paciente. Retorna True se ok."""
     conn = sqlite3.connect(str(DB_PATH))

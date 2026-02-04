@@ -1358,7 +1358,16 @@ def render_laudos(deps=None):
         )
 
         # inclui metadados no JSON (isso facilita MUITO a busca)
+        # paciente_id e clinica_id permitem vincular o laudo ao cadastro existente (evitar duplicata)
         dados_save = {
+            "paciente_id": st.session_state.get("cad_paciente_id"),
+            "clinica_id": st.session_state.get("cad_clinica_id"),
+            "nome_animal": nome_animal,
+            "data": _normalizar_data_str(data_exame),
+            "especie": especie,
+            "raca": raca,
+            "idade": idade,
+            "peso": peso,
             "paciente": {
                 "nome": nome_animal,
                 "peso": peso,

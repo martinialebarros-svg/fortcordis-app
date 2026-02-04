@@ -583,6 +583,7 @@ if "database" in sys.modules:
     sys.modules["database"].DB_PATH = DB_PATH
 # Conexão e upserts locais (clinicas/tutores/pacientes) em app/db.py
 from app.db import _db_conn_safe, _db_conn, _db_init, db_upsert_clinica, db_upsert_tutor, db_upsert_paciente
+from app.services.pacientes import buscar_pacientes_para_vinculo
 
 # 5. APP PRINCIPAL
 # ==========================================
@@ -1094,15 +1095,57 @@ if uploaded_xml:
             st.session_state["cad_clinica"] = clinica
             st.session_state["cad_sexo"] = sexo
             st.session_state["cad_solicitante"] = solicitante
-            # ✅ Auto-cadastro local ao importar XML (Extensible Markup Language)
+            # ✅ Vincular a paciente existente (evitar duplicata ao laudar animal já cadastrado)
+            matches = []
+            try:
+                matches = buscar_pacientes_para_vinculo(nome_animal=nome_animal or "", nome_tutor=tutor or "", limite=15)
+            except Exception:
+                pass
+            vincular_id = 0
+            if matches:
+                opcoes_vinculo = [(0, "➕ Cadastrar como novo (usar dados do XML)")] + [
+                    (m["id"], f"{m['paciente']} — {m['tutor']} (cadastro existente)")
+                    for m in matches
+                ]
+                rotulos = [o[1] for o in opcoes_vinculo]
+                # Default: primeiro cadastro existente (evita duplicata sem o usuário fazer nada)
+                indice_default = 1 if len(matches) else 0
+                escolha_rotulo = st.selectbox(
+                    "**Vincular este exame a um paciente já cadastrado?** (evita duplicar animal/tutor)",
+                    options=rotulos,
+                    index=indice_default,
+                    key="select_vinculo_paciente_xml"
+                )
+                vincular_id = next((o[0] for o in opcoes_vinculo if o[1] == escolha_rotulo), 0)
+                st.session_state["_vincular_paciente_escolha"] = vincular_id
+            else:
+                st.session_state["_vincular_paciente_escolha"] = 0
+            # ✅ Auto-cadastro ou vínculo ao existente
             try:
                 clinica_id = db_upsert_clinica(clinica)
-                tutor_id = db_upsert_tutor(tutor, telefone if 'telefone' in locals() else None)
-                paciente_id = db_upsert_paciente(tutor_id, nome_animal, especie=especie, raca=raca, sexo=sexo,
-                                                 nascimento=(nascimento if 'nascimento' in locals() else None))
-                st.session_state["cad_clinica_id"] = clinica_id
-                st.session_state["cad_tutor_id"] = tutor_id
-                st.session_state["cad_paciente_id"] = paciente_id
+                if vincular_id and vincular_id > 0:
+                    conn_vin = sqlite3.connect(str(DB_PATH))
+                    row_vin = conn_vin.execute("SELECT id, tutor_id FROM pacientes WHERE id = ?", (vincular_id,)).fetchone()
+                    conn_vin.close()
+                    if row_vin:
+                        paciente_id, tutor_id = row_vin[0], row_vin[1]
+                        st.session_state["cad_clinica_id"] = clinica_id
+                        st.session_state["cad_tutor_id"] = tutor_id
+                        st.session_state["cad_paciente_id"] = paciente_id
+                    else:
+                        tutor_id = db_upsert_tutor(tutor, telefone if 'telefone' in locals() else None)
+                        paciente_id = db_upsert_paciente(tutor_id, nome_animal, especie=especie, raca=raca, sexo=sexo,
+                                                         nascimento=(nascimento if 'nascimento' in locals() else None))
+                        st.session_state["cad_clinica_id"] = clinica_id
+                        st.session_state["cad_tutor_id"] = tutor_id
+                        st.session_state["cad_paciente_id"] = paciente_id
+                else:
+                    tutor_id = db_upsert_tutor(tutor, telefone if 'telefone' in locals() else None)
+                    paciente_id = db_upsert_paciente(tutor_id, nome_animal, especie=especie, raca=raca, sexo=sexo,
+                                                     nascimento=(nascimento if 'nascimento' in locals() else None))
+                    st.session_state["cad_clinica_id"] = clinica_id
+                    st.session_state["cad_tutor_id"] = tutor_id
+                    st.session_state["cad_paciente_id"] = paciente_id
             except Exception:
                 pass
 

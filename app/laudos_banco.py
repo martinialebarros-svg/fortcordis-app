@@ -80,17 +80,39 @@ def salvar_laudo_no_banco(
         cursor.execute(f"PRAGMA table_info({tabela})")
         colunas_existentes = [col[1] for col in cursor.fetchall()]
 
+        # Aceita dados no topo ou dentro de dados_laudo["paciente"] (ex.: JSON da página Laudos)
+        _pac = dados_laudo.get('paciente') or {}
+        _nome = dados_laudo.get('nome_animal') or _pac.get('nome', '')
+        _data = dados_laudo.get('data') or _pac.get('data_exame', '') or datetime.now().strftime('%Y-%m-%d')
+        _peso_raw = dados_laudo.get('peso') or _pac.get('peso', 0)
+        try:
+            _peso = float(_peso_raw) if _peso_raw is not None and str(_peso_raw).strip() else None
+        except (TypeError, ValueError):
+            _peso = None
+        paciente_id = dados_laudo.get('paciente_id')
+        if paciente_id is not None and not isinstance(paciente_id, int):
+            try:
+                paciente_id = int(paciente_id)
+            except (TypeError, ValueError):
+                paciente_id = None
+        clinica_id = dados_laudo.get('clinica_id')
+        if clinica_id is not None and not isinstance(clinica_id, int):
+            try:
+                clinica_id = int(clinica_id)
+            except (TypeError, ValueError):
+                clinica_id = None
+
         dados_possiveis = {
-            'nome_paciente': dados_laudo.get('nome_animal', ''),
-            'especie': dados_laudo.get('especie', ''),
-            'raca': dados_laudo.get('raca', ''),
-            'idade': dados_laudo.get('idade', ''),
-            'peso': float(dados_laudo.get('peso', 0)) if dados_laudo.get('peso') else None,
-            'data_exame': dados_laudo.get('data', datetime.now().strftime('%Y-%m-%d')),
+            'nome_paciente': _nome,
+            'especie': dados_laudo.get('especie') or _pac.get('especie', ''),
+            'raca': dados_laudo.get('raca') or _pac.get('raca', ''),
+            'idade': dados_laudo.get('idade') or _pac.get('idade', ''),
+            'peso': _peso,
+            'data_exame': _data,
             'tipo_exame': tipo_exame,
-            'paciente_id': None,
-            'clinica_id': None,
-            'veterinario_id': None,
+            'paciente_id': paciente_id,
+            'clinica_id': clinica_id,
+            'veterinario_id': dados_laudo.get('veterinario_id'),
             'criado_por': None,
             'modo_m': dados_laudo.get('modo_m', ''),
             'modo_bidimensional': dados_laudo.get('modo_2d', ''),
