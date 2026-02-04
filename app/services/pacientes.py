@@ -1,0 +1,107 @@
+# Serviço de pacientes: listar, buscar, atualizar peso
+import sqlite3
+from typing import Optional
+
+import pandas as pd
+
+from app.config import DB_PATH
+
+
+def listar_pacientes_com_tutor() -> pd.DataFrame:
+    """
+    Lista pacientes ativos com dados do tutor (para select em consultas, etc.).
+    Colunas: id, paciente, especie, raca, nascimento, peso_kg, tutor_id, tutor, telefone.
+    """
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        df = pd.read_sql_query("""
+            SELECT 
+                p.id,
+                p.nome as paciente,
+                p.especie,
+                p.raca,
+                p.nascimento,
+                p.peso_kg,
+                t.id as tutor_id,
+                t.nome as tutor,
+                t.telefone
+            FROM pacientes p
+            JOIN tutores t ON p.tutor_id = t.id
+            WHERE (p.ativo = 1 OR p.ativo IS NULL)
+            ORDER BY p.nome
+        """, conn)
+        return df
+    finally:
+        conn.close()
+
+
+def listar_pacientes_tabela() -> pd.DataFrame:
+    """
+    Lista pacientes para exibição em tabela (aba Pacientes do prontuário).
+    Colunas: id, Paciente, Espécie, Raça, Nascimento, Tutor, Contato.
+    """
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        df = pd.read_sql_query("""
+            SELECT 
+                p.id,
+                p.nome as 'Paciente',
+                p.especie as 'Espécie',
+                p.raca as 'Raça',
+                COALESCE(p.nascimento, '-') as 'Nascimento',
+                t.nome as 'Tutor',
+                t.telefone as 'Contato'
+            FROM pacientes p
+            JOIN tutores t ON p.tutor_id = t.id
+            WHERE (p.ativo = 1 OR p.ativo IS NULL)
+            ORDER BY t.nome, p.nome
+        """, conn)
+        return df
+    finally:
+        conn.close()
+
+
+def buscar_pacientes(
+    nome: Optional[str] = None,
+    tutor: Optional[str] = None,
+    limite: int = 20,
+) -> pd.DataFrame:
+    """
+    Busca pacientes por nome e/ou nome do tutor (ex.: prescrições).
+    Colunas: id, paciente, especie, raca, sexo, nascimento, tutor, telefone.
+    """
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        query = """
+            SELECT p.id, p.nome as paciente, p.especie, p.raca, p.sexo, p.nascimento,
+                   t.nome as tutor, t.telefone
+            FROM pacientes p
+            LEFT JOIN tutores t ON p.tutor_id = t.id
+            WHERE 1=1
+        """
+        params = []
+        if nome:
+            query += " AND UPPER(p.nome) LIKE UPPER(?)"
+            params.append(f"%{nome}%")
+        if tutor:
+            query += " AND UPPER(t.nome) LIKE UPPER(?)"
+            params.append(f"%{tutor}%")
+        query += " ORDER BY p.nome LIMIT ?"
+        params.append(limite)
+        df = pd.read_sql_query(query, conn, params=params)
+        return df
+    finally:
+        conn.close()
+
+
+def atualizar_peso_paciente(paciente_id: int, peso_kg: float) -> bool:
+    """Atualiza o peso do paciente. Retorna True se ok."""
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        conn.execute("UPDATE pacientes SET peso_kg = ? WHERE id = ?", (peso_kg, paciente_id))
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()

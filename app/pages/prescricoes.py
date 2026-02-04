@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from app.config import DB_PATH
+from app.services import buscar_pacientes
 from modules.rbac import verificar_permissao
 
 
@@ -398,33 +399,15 @@ def render_prescricoes():
             busca_nome_tut = st.text_input("👤 Nome do Tutor", placeholder="Ex: Maria", key="busca_pac_tutor")
 
         if busca_nome_pac or busca_nome_tut:
-            # Busca pacientes no banco
-            conn_busca = sqlite3.connect(str(DB_PATH))
             try:
-                query_pac = """
-                    SELECT p.id, p.nome as paciente, p.especie, p.raca, p.sexo, p.nascimento,
-                           t.nome as tutor, t.telefone
-                    FROM pacientes p
-                    LEFT JOIN tutores t ON p.tutor_id = t.id
-                    WHERE 1=1
-                """
-                params_pac = []
-
-                if busca_nome_pac:
-                    query_pac += " AND UPPER(p.nome) LIKE UPPER(?)"
-                    params_pac.append(f"%{busca_nome_pac}%")
-
-                if busca_nome_tut:
-                    query_pac += " AND UPPER(t.nome) LIKE UPPER(?)"
-                    params_pac.append(f"%{busca_nome_tut}%")
-
-                query_pac += " ORDER BY p.nome LIMIT 20"
-
-                pacientes_encontrados = pd.read_sql_query(query_pac, conn_busca, params=params_pac)
+                pacientes_encontrados = buscar_pacientes(
+                    nome=busca_nome_pac or None,
+                    tutor=busca_nome_tut or None,
+                    limite=20,
+                )
             except Exception as e:
                 pacientes_encontrados = pd.DataFrame()
                 st.warning(f"Erro na busca: {e}")
-            conn_busca.close()
 
             if not pacientes_encontrados.empty:
                 st.markdown(f"**{len(pacientes_encontrados)} pacientes encontrados**")

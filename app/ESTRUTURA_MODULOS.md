@@ -13,6 +13,10 @@ app/
   laudos_helpers.py  # QUALI_DET, frases, listar/obter laudos do banco, schema det
   laudos_deps.py     # build_laudos_deps(**kwargs), LAUDOS_DEPS_KEYS — contrato da página Laudos (Fase B)
   menu.py             # MENU_ITEMS, get_menu_labels() — registro central do menu (Fase A otimização)
+  services/           # Camada de serviços reutilizáveis (Fase C)
+    __init__.py
+    consultas.py      # listar_consultas_recentes, criar_consulta
+    pacientes.py      # listar_pacientes_com_tutor, listar_pacientes_tabela, buscar_pacientes, atualizar_peso_paciente
   ESTRUTURA_MODULOS.md
   pages/
     __init__.py        # exporta render_dashboard, ..., render_cadastros, render_configuracoes

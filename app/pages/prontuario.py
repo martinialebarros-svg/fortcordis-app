@@ -10,6 +10,12 @@ import streamlit as st
 
 from app.config import DB_PATH
 from app.db import _db_conn, _db_init
+from app.services import (
+    listar_consultas_recentes,
+    criar_consulta,
+    listar_pacientes_com_tutor,
+    listar_pacientes_tabela,
+)
 from modules.rbac import verificar_permissao
 
 
@@ -595,37 +601,17 @@ def render_prontuario():
         st.markdown("---")
         st.markdown("### 📋 Pacientes Cadastrados")
         
-        conn_list_pac = sqlite3.connect(str(DB_PATH))
-        
         try:
-            pacientes_df = pd.read_sql_query("""
-                SELECT 
-                    p.id,
-                    p.nome as 'Paciente',
-                    p.especie as 'Espécie',
-                    p.raca as 'Raça',
-                    COALESCE(p.nascimento, '-') as 'Nascimento',
-                    t.nome as 'Tutor',
-                    t.telefone as 'Contato'
-                FROM pacientes p
-                JOIN tutores t ON p.tutor_id = t.id
-                WHERE (p.ativo = 1 OR p.ativo IS NULL)
-                ORDER BY t.nome, p.nome
-            """, conn_list_pac)
-            
+            pacientes_df = listar_pacientes_tabela()
             if not pacientes_df.empty:
                 pacientes_df['Raça'] = pacientes_df['Raça'].fillna('SRD')
                 pacientes_df['Contato'] = pacientes_df['Contato'].fillna('Não informado')
-                
                 st.dataframe(pacientes_df.drop('id', axis=1), use_container_width=True, hide_index=True)
                 st.caption(f"Total: {len(pacientes_df)} paciente(s)")
             else:
                 st.info("Nenhum paciente cadastrado ainda")
-        
         except Exception as e:
             st.error(f"Erro ao carregar pacientes: {e}")
-        finally:
-            conn_list_pac.close()
     
     # ============================================================================
     # MÓDULO: CONSULTAS E ATENDIMENTOS - FASE 2
@@ -650,34 +636,13 @@ def render_prontuario():
             
             st.markdown("### 1️⃣ Selecione o Paciente")
             
-            conn_cons = sqlite3.connect(str(DB_PATH))
-            
-            # Busca pacientes com dados do tutor (mesmo banco dos cadastros: /DB/fortcordis.db)
-            pacientes_query = """
-                SELECT 
-                    p.id,
-                    p.nome as paciente,
-                    p.especie,
-                    p.raca,
-                    p.nascimento,
-                    p.peso_kg,
-                    t.id as tutor_id,
-                    t.nome as tutor,
-                    t.telefone
-                FROM pacientes p
-                JOIN tutores t ON p.tutor_id = t.id
-                WHERE (p.ativo = 1 OR p.ativo IS NULL)
-                ORDER BY p.nome
-            """
-            
             try:
-                pacientes_df = pd.read_sql_query(pacientes_query, conn_cons)
+                pacientes_df = listar_pacientes_com_tutor()
             except Exception:
                 pacientes_df = pd.DataFrame()
             
             if pacientes_df.empty:
                 st.warning("⚠️ Nenhum paciente cadastrado. Cadastre um paciente primeiro!")
-                conn_cons.close()
                 st.stop()
             
             # Cria lista formatada de pacientes
@@ -1000,65 +965,57 @@ def render_prontuario():
                     elif peso_atual <= 0:
                         st.error("❌ Informe o peso atual do paciente")
                     else:
-                        try:
-                            usuario = st.session_state.get("usuario_id")
-                            
-                            cursor_cons = conn_cons.cursor()
-                            
-                            cursor_cons.execute("""
-                                INSERT INTO consultas (
-                                    paciente_id, tutor_id, data_consulta, hora_consulta, tipo_atendimento,
-                                    motivo_consulta, anamnese, historico_atual, alimentacao, ambiente, comportamento,
-                                    peso_kg, temperatura_c, frequencia_cardiaca, frequencia_respiratoria,
-                                    tpc, mucosas, hidratacao, linfonodos, auscultacao_cardiaca, auscultacao_respiratoria,
-                                    palpacao_abdominal, exame_fisico_geral,
-                                    diagnostico_presuntivo, diagnostico_diferencial, diagnostico_definitivo,
-                                    conduta_terapeutica, exames_solicitados, procedimentos_realizados, orientacoes,
-                                    prognostico, data_retorno, observacoes,
-                                    veterinario_id, status
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                paciente_id, paciente_dados['tutor_id'], data_consulta, hora_consulta.strftime("%H:%M"),
-                                tipo_atendimento, motivo_consulta, anamnese, anamnese, alimentacao, ambiente, comportamento,
-                                peso_atual, temperatura, fc, fr,
-                                tpc, mucosas, hidratacao, linfonodos, auscultacao_card, auscultacao_resp,
-                                palpacao_abd, exame_fisico_geral,
-                                diagnostico_presuntivo, diagnostico_diferencial, diagnostico_definitivo,
-                                conduta, exames_solicitados, procedimentos, orientacoes,
-                                prognostico, data_retorno, observacoes,
-                                usuario["id"], "finalizado"
-                            ))
-                            
-                            consulta_id = cursor_cons.lastrowid
-                            
-                            # Atualiza peso do paciente (se a coluna existir no banco)
-                            try:
-                                cursor_cons.execute(
-                                    "UPDATE pacientes SET peso_kg = ? WHERE id = ?",
-                                    (peso_atual, paciente_id)
-                                )
-                            except Exception:
-                                pass
-                            
-                            conn_cons.commit()
-                            
+                        usuario = st.session_state.get("usuario_id")
+                        veterinario_id = usuario["id"] if isinstance(usuario, dict) else usuario
+                        data_retorno_str = data_retorno.strftime("%Y-%m-%d") if data_retorno else ""
+                        consulta_id, err = criar_consulta(
+                            paciente_id=paciente_id,
+                            tutor_id=int(paciente_dados["tutor_id"]),
+                            veterinario_id=veterinario_id,
+                            data_consulta=data_consulta.strftime("%Y-%m-%d"),
+                            hora_consulta=hora_consulta.strftime("%H:%M"),
+                            tipo_atendimento=tipo_atendimento,
+                            motivo_consulta=motivo_consulta or "",
+                            anamnese=anamnese or "",
+                            historico_atual=anamnese or "",
+                            alimentacao=alimentacao or "",
+                            ambiente=ambiente or "",
+                            comportamento=comportamento or "",
+                            peso_kg=peso_atual,
+                            temperatura_c=temperatura,
+                            frequencia_cardiaca=fc,
+                            frequencia_respiratoria=fr,
+                            tpc=tpc or "",
+                            mucosas=mucosas or "",
+                            hidratacao=hidratacao or "",
+                            linfonodos=linfonodos or "",
+                            auscultacao_cardiaca=auscultacao_card or "",
+                            auscultacao_respiratoria=auscultacao_resp or "",
+                            palpacao_abdominal=palpacao_abd or "",
+                            exame_fisico_geral=exame_fisico_geral or "",
+                            diagnostico_presuntivo=diagnostico_presuntivo or "",
+                            diagnostico_diferencial=diagnostico_diferencial or "",
+                            diagnostico_definitivo=diagnostico_definitivo or "",
+                            conduta_terapeutica=conduta or "",
+                            exames_solicitados=exames_solicitados or "",
+                            procedimentos_realizados=procedimentos or "",
+                            orientacoes=orientacoes or "",
+                            prognostico=prognostico or "",
+                            data_retorno=data_retorno_str,
+                            observacoes=observacoes or "",
+                            atualizar_peso=True,
+                        )
+                        if err:
+                            st.error(f"❌ Erro ao registrar consulta: {err}")
+                        else:
                             st.success(f"✅ Consulta registrada com sucesso! (ID: {consulta_id})")
                             st.balloons()
-                            
-                            # Limpa session state
-                            if 'paciente_consulta_id' in st.session_state:
-                                del st.session_state['paciente_consulta_id']
-                            
+                            if "paciente_consulta_id" in st.session_state:
+                                del st.session_state["paciente_consulta_id"]
                             st.info("💡 A consulta foi salva no prontuário do paciente")
-                            
                             import time
                             time.sleep(2)
                             st.rerun()
-                            
-                        except Exception as e:
-                            st.error(f"❌ Erro ao registrar consulta: {e}")
-            
-            conn_cons.close()
             
             # ====================================================================
             # HISTÓRICO DE CONSULTAS
@@ -1067,45 +1024,21 @@ def render_prontuario():
             st.markdown("---")
             st.markdown("### 📋 Consultas Recentes")
             
-            conn_hist = sqlite3.connect(str(DB_PATH))
-            
             try:
-                consultas_df = pd.read_sql_query("""
-                    SELECT 
-                        c.id,
-                        c.data_consulta as 'Data',
-                        p.nome as 'Paciente',
-                        t.nome as 'Tutor',
-                        c.tipo_atendimento as 'Tipo',
-                        c.diagnostico_presuntivo as 'Diagnóstico',
-                        u.nome as 'Veterinário'
-                    FROM consultas c
-                    JOIN pacientes p ON c.paciente_id = p.id
-                    JOIN tutores t ON c.tutor_id = t.id
-                    JOIN usuarios u ON c.veterinario_id = u.id
-                    ORDER BY c.data_consulta DESC, c.id DESC
-                    LIMIT 10
-                """, conn_hist)
-                
+                consultas_df = listar_consultas_recentes(limite=10)
                 if not consultas_df.empty:
-                    # Formata dados
-                    consultas_df['Paciente'] = consultas_df['Paciente'].str.title()
-                    consultas_df['Tutor'] = consultas_df['Tutor'].str.title()
-                    
+                    consultas_df["Paciente"] = consultas_df["Paciente"].str.title()
+                    consultas_df["Tutor"] = consultas_df["Tutor"].str.title()
                     st.dataframe(
-                        consultas_df.drop('id', axis=1),
+                        consultas_df.drop("id", axis=1),
                         use_container_width=True,
-                        hide_index=True
+                        hide_index=True,
                     )
-                    
                     st.caption(f"Mostrando as {len(consultas_df)} consultas mais recentes")
                 else:
                     st.info("📋 Nenhuma consulta registrada ainda")
-            
             except Exception as e:
                 st.warning(f"⚠️ Erro ao carregar histórico: {e}")
-            finally:
-                conn_hist.close()
 
 # ============================================================================
 # TELA: LAUDOS E EXAMES (AQUI VIRÁ TODO O SEU CÓDIGO)

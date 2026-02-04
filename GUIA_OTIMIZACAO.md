@@ -70,12 +70,13 @@ Assim, qualquer ambiente (local ou deploy) que rode o app terá o schema atualiz
 - **Próximo:** Mover para `app/` (ex.: `app/laudos_refs.py` ou ampliar `laudos_helpers`) as constantes e funções que hoje estão no `fortcordis_app.py` (PARAMS, interpretar, gerar_tabela_padrao, etc.) e fazer `build_laudos_deps` importá-las de lá, reduzindo o código no app principal.
 - **Benefício:** app principal enxuto; alterações em laudos ficam concentradas em `app/laudos*`.
 
-### Fase C — Camada de serviços (médio prazo)
+### Fase C — Camada de serviços (médio prazo) ✅ Feito
 
-- Criar `app/services/` com módulos por domínio, por exemplo:
-  - `consultas.py`: listar_consultas_recentes, criar_consulta, etc.
-  - `pacientes.py`: listar_por_tutor, buscar, etc.
-- As páginas chamam os serviços em vez de escrever SQL direto.
+- **`app/services/`** criado com:
+  - **consultas.py:** `listar_consultas_recentes(limite=10)`, `criar_consulta(...)` (insere consulta e opcionalmente atualiza peso do paciente).
+  - **pacientes.py:** `listar_pacientes_com_tutor()`, `listar_pacientes_tabela()`, `buscar_pacientes(nome=..., tutor=..., limite=20)`, `atualizar_peso_paciente(paciente_id, peso_kg)`.
+- **Prontuário** usa os serviços para lista de pacientes (aba Pacientes), select de pacientes e histórico de consultas (aba Consultas), e para registrar nova consulta.
+- **Prescrições** usa `buscar_pacientes` na aba "Buscar Paciente".
 - **Benefício:** reutilização, testes e mudanças de regra em um só lugar.
 
 ### Fase D — Componentes de UI (quando houver repetição)
