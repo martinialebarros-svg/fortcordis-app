@@ -20,15 +20,15 @@ import secrets
 # ============================================================
 # VERSÃO E CONFIG (app/config.py)
 # ============================================================
-from app.config import VERSAO_DEPLOY, DB_PATH, PASTA_DB, CSS_GLOBAL
-try:
-    from app.config import PASTA_LAUDOS, ARQUIVO_REF, ARQUIVO_REF_FELINOS
-except ImportError:
-    # Fallback para deploy com app.config antigo (sem paths de laudos)
-    PASTA_LAUDOS = Path.home() / "FortCordis" / "Laudos"
-    PASTA_LAUDOS.mkdir(parents=True, exist_ok=True)
-    ARQUIVO_REF = "tabela_referencia_caninos.csv"
-    ARQUIVO_REF_FELINOS = "tabela_referencia_felinos.csv"
+from app.config import (
+    VERSAO_DEPLOY,
+    DB_PATH,
+    PASTA_DB,
+    CSS_GLOBAL,
+    PASTA_LAUDOS,
+    ARQUIVO_REF,
+    ARQUIVO_REF_FELINOS,
+)
 
 # Banco de laudos (Fase B)
 from app.laudos_banco import (

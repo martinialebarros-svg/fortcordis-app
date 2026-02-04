@@ -27,7 +27,7 @@ from app.laudos_pdf import (
     obter_imagens_para_pdf,
     _normalizar_data_str,
 )
-from app.laudos_banco import salvar_laudo_no_banco
+from app.laudos_banco import salvar_laudo_no_banco, salvar_laudo_arquivo_no_banco
 try:
     from app.laudos_helpers import (
         montar_qualitativa,
@@ -91,6 +91,7 @@ def build_laudos_deps(**kwargs):
             DIVEDN_REF_TXT=DIVEDN_REF_TXT,
             listar_registros_arquivados_cached=listar_registros_arquivados_cached,
             salvar_laudo_no_banco=salvar_laudo_no_banco,
+            salvar_laudo_arquivo_no_banco=salvar_laudo_arquivo_no_banco,
             obter_imagens_para_pdf=obter_imagens_para_pdf,
             montar_qualitativa=montar_qualitativa,
             _caminho_marca_dagua=_caminho_marca_dagua,

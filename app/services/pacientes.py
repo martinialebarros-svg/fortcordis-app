@@ -1,10 +1,13 @@
 # Serviço de pacientes: listar, buscar, atualizar peso
+import logging
 import sqlite3
 from typing import Optional
 
 import pandas as pd
 
 from app.config import DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def listar_pacientes_com_tutor() -> pd.DataFrame:
@@ -101,7 +104,8 @@ def atualizar_peso_paciente(paciente_id: int, peso_kg: float) -> bool:
         conn.execute("UPDATE pacientes SET peso_kg = ? WHERE id = ?", (peso_kg, paciente_id))
         conn.commit()
         return True
-    except Exception:
+    except Exception as e:
+        logger.exception("Falha ao atualizar peso do paciente id=%s: %s", paciente_id, e)
         return False
     finally:
         conn.close()

@@ -1,7 +1,19 @@
-# Configuração central: versão, caminhos, CSS
+# Configuração central: versão, caminhos, CSS, logging
+import logging
 from pathlib import Path
 
 VERSAO_DEPLOY = "2026-02-01"
+
+# Logging: nível INFO para módulos app.*; erros vão para stderr / Streamlit Cloud logs
+def _setup_app_logging():
+    log = logging.getLogger("app")
+    if not log.handlers:
+        log.setLevel(logging.INFO)
+        h = logging.StreamHandler()
+        h.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s"))
+        log.addHandler(h)
+        log.propagate = False  # evita duplicar no root
+_setup_app_logging()
 _ROOT = Path(__file__).resolve().parent.parent
 PASTA_DB = _ROOT
 DB_PATH = _ROOT / "fortcordis.db"

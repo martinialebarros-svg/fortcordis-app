@@ -1,11 +1,15 @@
 # Operações de banco para laudos (ecocardiograma, eletro, pressão arterial)
 # Fase B: extraído do fortcordis_app.py
 import json
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Any, List, Optional, Tuple, Union
 
 from app.config import DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def _criar_tabelas_laudos_se_nao_existirem(cursor):
@@ -49,8 +53,13 @@ def _criar_tabelas_laudos_se_nao_existirem(cursor):
         cursor.execute(sql)
 
 
-def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
-    """Salva o laudo no banco de dados."""
+def salvar_laudo_no_banco(
+    tipo_exame: str,
+    dados_laudo: dict[str, Any],
+    caminho_json: str,
+    caminho_pdf: str,
+) -> Tuple[Optional[int], Optional[str]]:
+    """Salva o laudo no banco de dados. Retorna (laudo_id, None) ou (None, mensagem_erro)."""
     try:
         conn = sqlite3.connect(str(DB_PATH))
         cursor = conn.cursor()
@@ -122,11 +131,15 @@ def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
         return laudo_id, None
 
     except Exception as e:
+        logger.exception("Falha ao salvar laudo no banco: tipo=%s", tipo_exame)
         return None, str(e)
 
 
-def buscar_laudos(tipo_exame=None, nome_paciente=None):
-    """Busca laudos no banco."""
+def buscar_laudos(
+    tipo_exame: Optional[str] = None,
+    nome_paciente: Optional[str] = None,
+) -> Tuple[list, Optional[str]]:
+    """Busca laudos no banco. Retorna (lista_laudos, None) ou ([], mensagem_erro)."""
     try:
         conn = sqlite3.connect(str(DB_PATH))
         conn.row_factory = sqlite3.Row
@@ -168,6 +181,7 @@ def buscar_laudos(tipo_exame=None, nome_paciente=None):
         return laudos, None
 
     except Exception as e:
+        logger.exception("Falha ao buscar laudos no banco")
         return [], str(e)
 
 
@@ -185,6 +199,7 @@ def carregar_laudo_para_edicao(caminho_json):
         return dados, None
 
     except Exception as e:
+        logger.exception("Falha ao carregar laudo para edição: %s", caminho_json)
         return None, str(e)
 
 
@@ -218,4 +233,76 @@ def atualizar_laudo_editado(laudo_id, tipo_exame, caminho_json, dados_atualizado
         return True, None
 
     except Exception as e:
+        logger.exception("Falha ao atualizar laudo editado id=%s", laudo_id)
         return False, str(e)
+
+
+def salvar_laudo_arquivo_no_banco(
+    nome_base: str,
+    data_exame: str,
+    nome_animal: str,
+    nome_tutor: str,
+    nome_clinica: str,
+    tipo_exame: str,
+    conteudo_json: Union[bytes, str],
+    conteudo_pdf: bytes,
+    imagens: Optional[List[Tuple[str, bytes]]] = None,
+) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Salva laudo completo (JSON + PDF + imagens) na tabela laudos_arquivos.
+    Tudo fica no banco em um único lugar; na nuvem, use um DB persistente (volume ou DB externo).
+    Retorna (id_laudo_arquivo, None) ou (None, mensagem_erro).
+    """
+    try:
+        if isinstance(conteudo_json, str):
+            conteudo_json = conteudo_json.encode("utf-8")
+        imagens = imagens or []
+
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='laudos_arquivos'"
+        )
+        if not cursor.fetchone():
+            from app.db import _db_init
+            _db_init()
+            conn = sqlite3.connect(str(DB_PATH))
+            cursor = conn.cursor()
+
+        cursor.execute(
+            """INSERT OR REPLACE INTO laudos_arquivos
+               (data_exame, nome_animal, nome_tutor, nome_clinica, tipo_exame, nome_base, conteudo_json, conteudo_pdf, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data_exame,
+                nome_animal or "",
+                nome_tutor or "",
+                nome_clinica or "",
+                tipo_exame or "ecocardiograma",
+                nome_base,
+                conteudo_json,
+                conteudo_pdf,
+                datetime.now().isoformat(),
+            ),
+        )
+        laudo_arquivo_id = cursor.lastrowid
+        if laudo_arquivo_id == 0:
+            cursor.execute("SELECT id FROM laudos_arquivos WHERE nome_base = ?", (nome_base,))
+            row = cursor.fetchone()
+            laudo_arquivo_id = row[0] if row else None
+
+        if laudo_arquivo_id:
+            cursor.execute("DELETE FROM laudos_arquivos_imagens WHERE laudo_arquivo_id = ?", (laudo_arquivo_id,))
+            for ordem, (nome_arquivo, img_bytes) in enumerate(imagens):
+                cursor.execute(
+                    "INSERT INTO laudos_arquivos_imagens (laudo_arquivo_id, ordem, nome_arquivo, conteudo) VALUES (?, ?, ?, ?)",
+                    (laudo_arquivo_id, ordem, nome_arquivo, img_bytes),
+                )
+
+        conn.commit()
+        conn.close()
+        return (laudo_arquivo_id, None)
+    except Exception as e:
+        logger.exception("Falha ao salvar laudo em laudos_arquivos: nome_base=%s", nome_base)
+        return (None, str(e))

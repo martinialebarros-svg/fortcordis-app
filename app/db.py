@@ -1,4 +1,5 @@
 # Conexão SQLite e upserts (clinicas, tutores, pacientes) usados pelo app
+import logging
 import sqlite3
 import time
 from pathlib import Path
@@ -9,6 +10,8 @@ import streamlit as st
 from app.config import DB_PATH
 from app.utils import nome_proprio_ptbr, _norm_key
 
+logger = logging.getLogger(__name__)
+
 
 def _db_conn_safe():
     """Abre o banco; se corrompido/travado, reinicia o arquivo para o app voltar a abrir."""
@@ -18,7 +21,8 @@ def _db_conn_safe():
         conn.execute("SELECT 1")
         conn.row_factory = sqlite3.Row
         return conn
-    except Exception:
+    except Exception as e:
+        logger.exception("Falha ao conectar ao banco: %s", e)
         if conn is not None:
             try:
                 conn.close()
@@ -26,10 +30,11 @@ def _db_conn_safe():
                 pass
         try:
             path = Path(DB_PATH)
+            backup_path = None
             if path.exists():
-                backup = path.parent / (path.stem + ".corrupted." + str(int(time.time())) + path.suffix)
+                backup_path = path.parent / (path.stem + ".corrupted." + str(int(time.time())) + path.suffix)
                 try:
-                    path.rename(backup)
+                    path.rename(backup_path)
                 except Exception:
                     try:
                         path.unlink()
@@ -40,6 +45,7 @@ def _db_conn_safe():
             conn.row_factory = sqlite3.Row
             if "db_was_recovered" not in st.session_state:
                 st.session_state["db_was_recovered"] = True
+            logger.warning("Banco reiniciado após falha; backup em %s", backup_path or "N/A")
             return conn
         except Exception:
             raise

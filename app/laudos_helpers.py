@@ -1,4 +1,6 @@
 # Helpers para o módulo Laudos: frases (QUALI_DET, schema, migração), listagem e obter laudos do banco
+from __future__ import annotations
+
 import json
 import copy
 import os
@@ -6,6 +8,7 @@ import re
 import sqlite3
 import unicodedata
 from pathlib import Path
+from typing import Any, Optional
 
 import streamlit as st
 
@@ -237,7 +240,7 @@ def montar_chave_frase(patologia: str, grau_refluxo: str, grau_geral: str) -> st
     return f"{patologia} ({grau_geral})"
 
 
-def obter_entry_frase(db: dict, chave: str):
+def obter_entry_frase(db: dict, chave: str) -> Optional[dict[str, Any]]:
     """Obtém a entry do banco tentando (1) exato, (2) normalizado e (3) variações de grau."""
     if not isinstance(db, dict):
         return None
@@ -427,7 +430,7 @@ def montar_qualitativa():
     return saida
 
 
-def carregar_frases(arquivo_frases: str, frases_default: dict):
+def carregar_frases(arquivo_frases: str, frases_default: dict) -> dict[str, Any]:
     """Carrega frases do JSON; usa frases_default como base e merge do arquivo."""
     if not os.path.exists(arquivo_frases):
         Path(arquivo_frases).parent.mkdir(parents=True, exist_ok=True)

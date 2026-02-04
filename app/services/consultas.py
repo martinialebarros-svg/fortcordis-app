@@ -1,10 +1,13 @@
 # Serviço de consultas: listar recentes, criar consulta
+import logging
 import sqlite3
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 import pandas as pd
 
 from app.config import DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def listar_consultas_recentes(limite: int = 10) -> pd.DataFrame:
@@ -111,6 +114,7 @@ def criar_consulta(
         conn.commit()
         return (consulta_id, None)
     except Exception as e:
+        logger.exception("Falha ao criar consulta no banco")
         return (None, str(e))
     finally:
         conn.close()

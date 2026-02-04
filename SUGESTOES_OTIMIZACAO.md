@@ -36,27 +36,29 @@ A lógica de Laudos foi movida para `app/` e o `fortcordis_app.py` foi reduzido.
 
 ## 2. Prioridade média
 
-### 2.1 Logging em vez de print / st para diagnóstico
+### 2.1 Logging em vez de print / st para diagnóstico ✅ Feito
 
-- Introduzir o módulo **`logging`** e um logger por módulo (ex.: `logger = logging.getLogger(__name__)`).
-- Para erros e eventos importantes (falha ao salvar laudo, falha de conexão ao banco), usar `logger.exception` ou `logger.error` em vez de só `st.error` ou `print`.
-- Manter `st.error`/`st.warning` para mensagens ao usuário; usar logging para rastreio em arquivo/console em desenvolvimento e em logs do Streamlit Cloud.
+- **`app/config.py`** chama `_setup_app_logging()` e configura o logger `app` (nível INFO, handler em stderr).
+- **`app/db.py`**, **`app/laudos_banco.py`**, **`app/services/consultas.py`**, **`app/services/pacientes.py`** usam `logger = logging.getLogger(__name__)` e `logger.exception` em falhas (conexão ao banco, salvar laudo, criar consulta, atualizar peso).
+- Mensagens ao usuário continuam com `st.error`/`st.warning`; logging serve para rastreio em desenvolvimento e nos logs do Streamlit Cloud.
 
-### 2.2 Tratamento de erros padronizado
+### 2.2 Tratamento de erros padronizado ✅ Parcial
 
-- Definir exceções customizadas (ex.: `app.exceptions.LaudoNotFoundError`, `app.exceptions.DBError`) se fizer sentido.
-- Em serviços (`app/services/*.py`), usar `try/except` com log e re-raise ou retorno estruturado (ex.: `{"ok": False, "error": "..."}`) em pontos críticos.
-- Na UI, exibir mensagem amigável e, em modo debug, o detalhe (já parcialmente feito com o excepthook no app principal).
+- **`app/exceptions.py`** criado com `AppError`, `DBError`, `LaudoNotFoundError`, `ConfigError` para uso futuro.
+- Serviços e laudos_banco continuam com retorno estruturado `(resultado, None)` ou `(None, mensagem_erro)` e **log** em exceções; exceções customizadas podem ser usadas em refatorações futuras.
+- UI e excepthook no app principal seguem exibindo mensagem amigável + detalhe em expander.
 
-### 2.3 Type hints
+### 2.3 Type hints ✅ Parcial
 
-- Adicionar anotações de tipo nas assinaturas de `app/services/*`, `app/laudos_helpers.py` e nos novos `app/laudos_*.py` (retornos e parâmetros principais).
-- Facilita manutenção e uso de ferramentas (IDE, mypy) sem mudar comportamento.
+- **`app/services/consultas.py`** e **`app/services/pacientes.py`** já tinham type hints; mantidos.
+- **`app/laudos_banco.py`**: assinaturas e retornos de `salvar_laudo_no_banco`, `buscar_laudos` com `Tuple`, `Optional`.
+- **`app/laudos_helpers.py`**: `obter_entry_frase`, `carregar_frases`, `montar_chave_frase` com tipos principais.
+- Outros módulos podem ganhar anotações gradualmente.
 
-### 2.4 Config completo em `app/config.py`
+### 2.4 Config completo em `app/config.py` ✅ Feito
 
-- Já existem `PASTA_LAUDOS`, `ARQUIVO_REF`, `ARQUIVO_REF_FELINOS` em `app.config`.
-- Remover o bloco `try/except ImportError` de fallback no `fortcordis_app.py` assim que o deploy estiver sempre com `app/config.py` atualizado (evita dois caminhos de configuração).
+- **`app/config.py`** já contém `PASTA_LAUDOS`, `ARQUIVO_REF`, `ARQUIVO_REF_FELINOS`.
+- **`fortcordis_app.py`**: bloco `try/except ImportError` de fallback para esses paths foi **removido**; o app importa tudo diretamente de `app.config`.
 
 ---
 

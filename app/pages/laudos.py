@@ -53,6 +53,7 @@ def render_laudos(deps=None):
     DIVEDN_REF_TXT = deps.DIVEDN_REF_TXT
     listar_registros_arquivados_cached = deps.listar_registros_arquivados_cached
     salvar_laudo_no_banco = deps.salvar_laudo_no_banco
+    salvar_laudo_arquivo_no_banco = deps.salvar_laudo_arquivo_no_banco
     obter_imagens_para_pdf = deps.obter_imagens_para_pdf
     montar_qualitativa = deps.montar_qualitativa
     _caminho_marca_dagua = deps._caminho_marca_dagua
@@ -1741,9 +1742,29 @@ def render_laudos(deps=None):
                 }
 
                 (PASTA_LAUDOS / f"{nome_base_pa}.pdf").write_bytes(pdf_pa_bytes)
-                (PASTA_LAUDOS / f"{nome_base_pa}.json").write_text(json.dumps(dados_pa, indent=4, ensure_ascii=False), encoding="utf-8")
+                json_pa_str = json.dumps(dados_pa, indent=4, ensure_ascii=False)
+                (PASTA_LAUDOS / f"{nome_base_pa}.json").write_text(json_pa_str, encoding="utf-8")
 
                 st.success(f"PDF de Pressão Arterial gerado e arquivado em: {PASTA_LAUDOS}")
+                # Salva também no banco (laudos_arquivos) para ficar em um único lugar
+                try:
+                    id_arq_pa, erro_pa = salvar_laudo_arquivo_no_banco(
+                        nome_base=nome_base_pa,
+                        data_exame=str(st.session_state.get("cad_data", "") or ""),
+                        nome_animal=str(st.session_state.get("cad_paciente", "") or ""),
+                        nome_tutor=str(st.session_state.get("cad_tutor", "") or ""),
+                        nome_clinica=str(st.session_state.get("cad_clinica", "") or ""),
+                        tipo_exame="pressao_arterial",
+                        conteudo_json=json_pa_str,
+                        conteudo_pdf=pdf_pa_bytes,
+                        imagens=[],
+                    )
+                    if id_arq_pa:
+                        st.success(f"✅ Laudo de Pressão Arterial salvo no banco (id {id_arq_pa}).")
+                    elif erro_pa:
+                        st.warning(f"⚠️ Pasta ok; banco: {erro_pa}")
+                except Exception as e_pa:
+                    st.warning(f"⚠️ Pasta ok; erro ao salvar no banco: {e_pa}")
             except Exception as e:
                 st.warning(f"PDF gerado, mas não consegui arquivar automaticamente: {e}")
 
@@ -2121,6 +2142,7 @@ def render_laudos(deps=None):
                     # 2) salva imagens (quando existirem) e registra no JSON
                     imgs = obter_imagens_para_pdf()
                     imgs_saved = []
+                    imgs_para_banco = []  # (nome_arquivo, bytes) para laudos_arquivos_imagens
 
                     # remove imagens antigas do mesmo exame (caso esteja re-gerando)
                     try:
@@ -2139,6 +2161,7 @@ def render_laudos(deps=None):
                         fname = f"{nome_base}__IMG_{i:02d}{ext}"
                         (PASTA_LAUDOS / fname).write_bytes(b)
                         imgs_saved.append(fname)
+                        imgs_para_banco.append((fname, b))
 
                     # 3) salva JSON já com as imagens referenciadas
                     dados_save_arch = dict(dados_save)
@@ -2147,8 +2170,28 @@ def render_laudos(deps=None):
                     (PASTA_LAUDOS / f"{nome_base}.json").write_text(json_str_arch, encoding="utf-8")
 
                     _ = st.success(f"PDF gerado e arquivado em: {PASTA_LAUDOS}")
+
+                    # 3b) ✅ SALVA NO BANCO (laudos_arquivos + imagens) — um único lugar, persiste na nuvem se o DB for persistente
+                    try:
+                        id_arq, erro_arq = salvar_laudo_arquivo_no_banco(
+                            nome_base=nome_base,
+                            data_exame=data_exame or datetime.now().strftime("%Y-%m-%d"),
+                            nome_animal=nome_animal or "",
+                            nome_tutor=tutor or "",
+                            nome_clinica=clinica or "",
+                            tipo_exame="ecocardiograma",
+                            conteudo_json=json_str_arch,
+                            conteudo_pdf=pdf_bytes,
+                            imagens=imgs_para_banco,
+                        )
+                        if id_arq:
+                            _ = st.success(f"✅ Laudo e imagens salvos no banco (id {id_arq}). Disponível em Buscar exames > Exames da pasta importados.")
+                        elif erro_arq:
+                            _ = st.warning(f"⚠️ Laudo na pasta ok; banco: {erro_arq}")
+                    except Exception as e_arq:
+                        _ = st.warning(f"⚠️ Laudo na pasta ok; erro ao salvar no banco: {e_arq}")
                     
-                    # 4) ✅ SALVA NO BANCO DE DADOS
+                    # 4) ✅ SALVA NO BANCO DE DADOS (laudos_ecocardiograma — paths)
                     try:
                         laudo_id, erro = salvar_laudo_no_banco(
                             tipo_exame="ecocardiograma",  # ← AJUSTE CONFORME O TIPO!
