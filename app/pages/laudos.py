@@ -2229,7 +2229,8 @@ def render_laudos(deps=None):
                                         servico_id_os = serv_row[0]
                                         vb, vd, vf = calcular_valor_final(servico_id_os, clinica_id_os)
                                         numero_os = gerar_numero_os()
-                                        data_comp = datetime.now().strftime("%Y-%m-%d")
+                                        # Data da coluna "Data" no financeiro = data do exame (não a data de hoje)
+                                        data_comp = _normalizar_data_str(data_exame)
                                         descricao_os = f"Ecocardiograma - {nome_animal or 'Paciente'}"
                                         cursor_fin.execute("""
                                             INSERT INTO financeiro (
