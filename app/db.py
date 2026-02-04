@@ -113,6 +113,53 @@ def _db_init():
                 FOREIGN KEY(laudo_arquivo_id) REFERENCES laudos_arquivos(id)
             )
         """)
+        # Tabela consultas (prontuário — aba Consultas)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS consultas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paciente_id INTEGER NOT NULL,
+                tutor_id INTEGER NOT NULL,
+                data_consulta TEXT NOT NULL,
+                hora_consulta TEXT,
+                tipo_atendimento TEXT,
+                motivo_consulta TEXT,
+                anamnese TEXT,
+                historico_atual TEXT,
+                alimentacao TEXT,
+                ambiente TEXT,
+                comportamento TEXT,
+                peso_kg REAL,
+                temperatura_c REAL,
+                frequencia_cardiaca INTEGER,
+                frequencia_respiratoria INTEGER,
+                tpc TEXT,
+                mucosas TEXT,
+                hidratacao TEXT,
+                linfonodos TEXT,
+                auscultacao_cardiaca TEXT,
+                auscultacao_respiratoria TEXT,
+                palpacao_abdominal TEXT,
+                exame_fisico_geral TEXT,
+                diagnostico_presuntivo TEXT,
+                diagnostico_diferencial TEXT,
+                diagnostico_definitivo TEXT,
+                conduta_terapeutica TEXT,
+                prescricao_id INTEGER,
+                exames_solicitados TEXT,
+                procedimentos_realizados TEXT,
+                orientacoes TEXT,
+                prognostico TEXT,
+                data_retorno TEXT,
+                observacoes TEXT,
+                veterinario_id INTEGER NOT NULL,
+                status TEXT DEFAULT 'finalizado',
+                data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+                data_modificacao TEXT,
+                FOREIGN KEY (paciente_id) REFERENCES pacientes(id),
+                FOREIGN KEY (tutor_id) REFERENCES tutores(id),
+                FOREIGN KEY (veterinario_id) REFERENCES usuarios(id)
+            )
+        """)
         conn.commit()
     finally:
         conn.close()

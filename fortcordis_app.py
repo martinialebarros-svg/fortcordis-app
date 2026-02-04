@@ -3103,21 +3103,14 @@ if "trocar_assinatura" not in st.session_state:
 # ============================================================================
 # MENU PRINCIPAL (definido cedo para condicionar XML e Suspeita apenas a Laudos)
 # ============================================================================
+from app.menu import MENU_ITEMS, get_menu_labels
+
 st.sidebar.markdown("## 🏥 Fort Cordis")
 st.sidebar.markdown("*Sistema Integrado de Gestão*")
 st.sidebar.markdown("---")
 menu_principal = st.sidebar.radio(
     "Navegação",
-    [
-        "🏠 Dashboard",
-        "📅 Agendamentos",
-        "📋 Prontuário",
-        "🩺 Laudos e Exames",
-        "💊 Prescrições",
-        "💰 Financeiro",
-        "🏢 Cadastros",
-        "⚙️ Configurações"
-    ],
+    get_menu_labels(),
     label_visibility="collapsed"
 )
 st.sidebar.markdown("---")
@@ -4061,82 +4054,58 @@ except Exception as e:
 # Menu principal já definido no início do script (único radio, evita StreamlitDuplicateElementId)
 
 # ============================================================================
-# TELA: DASHBOARD (módulo app.pages.dashboard)
+# DISPATCH: renderiza a página escolhida (menu centralizado em app.menu)
 # ============================================================================
-if menu_principal == "🏠 Dashboard":
-    from app.pages.dashboard import render_dashboard
-    render_dashboard()
+import importlib
 
-# ============================================================================
-# TELA: AGENDAMENTOS (módulo app.pages.agendamentos)
-# ============================================================================
-elif menu_principal == "📅 Agendamentos":
-    from app.pages.agendamentos import render_agendamentos
-    render_agendamentos()
-
-elif menu_principal == "📋 Prontuário":
-    from app.pages.prontuario import render_prontuario
-    render_prontuario()
-
-elif menu_principal == "🩺 Laudos e Exames":
-    from types import SimpleNamespace
-    from app.pages.laudos import render_laudos
-    laudos_deps = SimpleNamespace(
-        PASTA_LAUDOS=PASTA_LAUDOS,
-        ARQUIVO_REF=ARQUIVO_REF,
-        ARQUIVO_REF_FELINOS=ARQUIVO_REF_FELINOS,
-        PARAMS=PARAMS,
-        get_grupos_por_especie=get_grupos_por_especie,
-        normalizar_especie_label=normalizar_especie_label,
-        montar_nome_base_arquivo=montar_nome_base_arquivo,
-        calcular_referencia_tabela=calcular_referencia_tabela,
-        interpretar=interpretar,
-        interpretar_divedn=interpretar_divedn,
-        DIVEDN_REF_TXT=DIVEDN_REF_TXT,
-        listar_registros_arquivados_cached=listar_registros_arquivados_cached,
-        salvar_laudo_no_banco=salvar_laudo_no_banco,
-        obter_imagens_para_pdf=obter_imagens_para_pdf,
-        montar_qualitativa=montar_qualitativa,
-        _caminho_marca_dagua=_caminho_marca_dagua,
-        montar_chave_frase=montar_chave_frase,
-        carregar_frases=carregar_frases,
-        gerar_tabela_padrao=gerar_tabela_padrao,
-        gerar_tabela_padrao_felinos=gerar_tabela_padrao_felinos,
-        limpar_e_converter_tabela=limpar_e_converter_tabela,
-        limpar_e_converter_tabela_felinos=limpar_e_converter_tabela_felinos,
-        carregar_tabela_referencia_cached=carregar_tabela_referencia_cached,
-        carregar_tabela_referencia_felinos_cached=carregar_tabela_referencia_felinos_cached,
-        _normalizar_data_str=_normalizar_data_str,
-        especie_is_felina=especie_is_felina,
-        calcular_valor_final=calcular_valor_final,
-        gerar_numero_os=gerar_numero_os,
-    )
-    try:
-        render_laudos(laudos_deps)
-    except TypeError:
-        st.error(
-            "**Laudos: versão desatualizada no servidor.** O módulo Laudos no deploy não está alinhado com o app. "
-            "Confirme que **app/pages/laudos.py** está commitado com a assinatura `def render_laudos(deps=None)`, "
-            "faça **push** e aguarde o redeploy no Streamlit Cloud (ou use *Manage app* → *Reboot*)."
+for label, module_path, function_name, special in MENU_ITEMS:
+    if menu_principal != label:
+        continue
+    if special == "laudos":
+        from types import SimpleNamespace
+        from app.pages.laudos import render_laudos
+        laudos_deps = SimpleNamespace(
+            PASTA_LAUDOS=PASTA_LAUDOS,
+            ARQUIVO_REF=ARQUIVO_REF,
+            ARQUIVO_REF_FELINOS=ARQUIVO_REF_FELINOS,
+            PARAMS=PARAMS,
+            get_grupos_por_especie=get_grupos_por_especie,
+            normalizar_especie_label=normalizar_especie_label,
+            montar_nome_base_arquivo=montar_nome_base_arquivo,
+            calcular_referencia_tabela=calcular_referencia_tabela,
+            interpretar=interpretar,
+            interpretar_divedn=interpretar_divedn,
+            DIVEDN_REF_TXT=DIVEDN_REF_TXT,
+            listar_registros_arquivados_cached=listar_registros_arquivados_cached,
+            salvar_laudo_no_banco=salvar_laudo_no_banco,
+            obter_imagens_para_pdf=obter_imagens_para_pdf,
+            montar_qualitativa=montar_qualitativa,
+            _caminho_marca_dagua=_caminho_marca_dagua,
+            montar_chave_frase=montar_chave_frase,
+            carregar_frases=carregar_frases,
+            gerar_tabela_padrao=gerar_tabela_padrao,
+            gerar_tabela_padrao_felinos=gerar_tabela_padrao_felinos,
+            limpar_e_converter_tabela=limpar_e_converter_tabela,
+            limpar_e_converter_tabela_felinos=limpar_e_converter_tabela_felinos,
+            carregar_tabela_referencia_cached=carregar_tabela_referencia_cached,
+            carregar_tabela_referencia_felinos_cached=carregar_tabela_referencia_felinos_cached,
+            _normalizar_data_str=_normalizar_data_str,
+            especie_is_felina=especie_is_felina,
+            calcular_valor_final=calcular_valor_final,
+            gerar_numero_os=gerar_numero_os,
         )
-
-
-
-elif menu_principal == "💊 Prescrições":
-    from app.pages.prescricoes import render_prescricoes
-    render_prescricoes()
-
-elif menu_principal == "💰 Financeiro":
-    from app.pages.financeiro import render_financeiro
-    render_financeiro()
-
-elif menu_principal == "🏢 Cadastros":
-    from app.pages.cadastros import render_cadastros
-    render_cadastros()
-
-elif menu_principal == "⚙️ Configurações":
-    from app.pages.configuracoes import render_configuracoes
-    render_configuracoes()
+        try:
+            render_laudos(laudos_deps)
+        except TypeError:
+            st.error(
+                "**Laudos: versão desatualizada no servidor.** O módulo Laudos no deploy não está alinhado com o app. "
+                "Confirme que **app/pages/laudos.py** está commitado com a assinatura `def render_laudos(deps=None)`, "
+                "faça **push** e aguarde o redeploy no Streamlit Cloud (ou use *Manage app* → *Reboot*)."
+            )
+    else:
+        mod = importlib.import_module(module_path)
+        getattr(mod, function_name)()
+    break
 
 
 QUALI_DET = {

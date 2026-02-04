@@ -9,8 +9,9 @@ app/
   __init__.py
   config.py          # VERSAO_DEPLOY, DB_PATH, PASTA_DB, CSS_GLOBAL
   utils.py            # nome_proprio_ptbr, _norm_key, _clean_spaces (uso em db e laudos)
-  db.py               # _db_conn_safe, _db_conn, _db_init, db_upsert_clinica/tutor/paciente
+  db.py               # _db_conn_safe, _db_conn, _db_init, db_upsert_clinica/tutor/paciente/consultas
   laudos_helpers.py  # QUALI_DET, frases, listar/obter laudos do banco, schema det
+  menu.py             # MENU_ITEMS, get_menu_labels() — registro central do menu (Fase A otimização)
   ESTRUTURA_MODULOS.md
   pages/
     __init__.py        # exporta render_dashboard, ..., render_cadastros, render_configuracoes
@@ -60,6 +61,17 @@ app/
    - menu na sidebar
    - sequência de `if menu_principal == ...: render_*()`.
 
+## Como adicionar uma nova página
+
+1. Criar `app/pages/nome.py` com `def render_nome():` (e, se precisar, checar permissão com `verificar_permissao`).
+2. Em **`app/menu.py`**: adicionar uma linha em `MENU_ITEMS`, por exemplo:  
+   `("🆕 Minha Página", "app.pages.nome", "render_nome", None)`  
+   (o último `None` é para páginas normais; use `"laudos"` só para Laudos).
+3. Em **`app/pages/__init__.py`**: adicionar `from app.pages.nome import render_nome` e incluir `"render_nome"` em `__all__`.
+4. Rodar o app: a nova opção aparece no menu e é despachada automaticamente.
+
+Ver também **GUIA_OTIMIZACAO.md** (raiz do projeto) para diretrizes de onde colocar tabelas, serviços e componentes.
+
 ## Como rodar
 
 Nada muda para o usuário:
@@ -68,4 +80,4 @@ Nada muda para o usuário:
 streamlit run fortcordis_app.py
 ```
 
-O app continua funcionando; Dashboard e Agendamentos passam a ser renderizados pelos módulos em `app/pages/`.
+O app continua funcionando; o menu e o dispatch vêm de `app.menu` e `app.pages/`.
