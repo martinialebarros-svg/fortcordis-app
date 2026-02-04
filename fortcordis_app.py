@@ -20,7 +20,7 @@ import secrets
 # ============================================================
 # VERSÃO E CONFIG (app/config.py)
 # ============================================================
-from app.config import VERSAO_DEPLOY, DB_PATH, PASTA_DB, CSS_GLOBAL
+from app.config import VERSAO_DEPLOY, DB_PATH, PASTA_DB, CSS_GLOBAL, PASTA_LAUDOS, ARQUIVO_REF, ARQUIVO_REF_FELINOS
 
 # ============================================================
 # CONFIGURAÇÃO DA PÁGINA E DESIGN (primeiro comando Streamlit)
@@ -601,15 +601,7 @@ MARCA_DAGUA_TEMP = str(Path(tempfile.gettempdir()) / "fortcordis_watermark_faded
 ARQUIVO_FRASES = str((Path.home() / "FortCordis" / "frases_personalizadas.json"))
 Path(ARQUIVO_FRASES).parent.mkdir(parents=True, exist_ok=True)
 
-# Arquivos de referência (SEPARADOS por espécie)
-ARQUIVO_REF = "tabela_referencia_caninos.csv"  # ← CORRIGIDO!
-ARQUIVO_REF_FELINOS = "tabela_referencia_felinos.csv"
-
-# ==========================================================
-# 📁 Pasta fixa para arquivar exames (para busca)
-# ==========================================================
-PASTA_LAUDOS = Path.home() / "FortCordis" / "Laudos"
-PASTA_LAUDOS.mkdir(parents=True, exist_ok=True)
+# Arquivos de referência e pasta Laudos vêm de app.config (PASTA_LAUDOS, ARQUIVO_REF, ARQUIVO_REF_FELINOS)
 
 # ==========================================================
 # 📷 Imagens do exame (carregadas do arquivo e/ou adicionadas manualmente)
@@ -4005,18 +3997,11 @@ if "cad_especie" not in st.session_state or not str(st.session_state.get("cad_es
 # MARCA_DAGUA_TEMP já definido no início do arquivo (pasta temp + opacidade 0.05)
 ARQUIVO_FRASES = str((Path.home() / "FortCordis" / "frases_personalizadas.json"))
 Path(ARQUIVO_FRASES).parent.mkdir(parents=True, exist_ok=True)
-ARQUIVO_REF = "tabela_referencia.csv"
+# ARQUIVO_REF, ARQUIVO_REF_FELINOS, PASTA_LAUDOS vêm de app.config
 
-ARQUIVO_REF_FELINOS = "tabela_referencia_felinos.csv"
 import unicodedata
 from datetime import datetime, date
 from pathlib import Path
-
-# ==========================================================
-# 📁 Pasta fixa para arquivar exames (para busca)
-# ==========================================================
-PASTA_LAUDOS = Path.home() / "FortCordis" / "Laudos"
-PASTA_LAUDOS.mkdir(parents=True, exist_ok=True)
 
 # Novas pastas para os módulos de gestão
 PASTA_PRESCRICOES = Path.home() / "FortCordis" / "Prescricoes"
@@ -4062,9 +4047,9 @@ for label, module_path, function_name, special in MENU_ITEMS:
     if menu_principal != label:
         continue
     if special == "laudos":
-        from types import SimpleNamespace
+        from app.laudos_deps import build_laudos_deps
         from app.pages.laudos import render_laudos
-        laudos_deps = SimpleNamespace(
+        laudos_deps = build_laudos_deps(
             PASTA_LAUDOS=PASTA_LAUDOS,
             ARQUIVO_REF=ARQUIVO_REF,
             ARQUIVO_REF_FELINOS=ARQUIVO_REF_FELINOS,

@@ -63,12 +63,11 @@ Assim, qualquer ambiente (local ou deploy) que rode o app terá o schema atualiz
 - No `fortcordis_app.py`, o `st.sidebar.radio` usa `get_menu_labels()` e um loop despacha para a página escolhida; Laudos continua com handler especial `"laudos"` (monta `laudos_deps` e chama `render_laudos(laudos_deps)`).
 - **Benefício:** adicionar ou reordenar uma página = editar `app/menu.py` e criar `app/pages/nome.py` com `render_nome()`.
 
-### Fase B — Mover lógica de Laudos para `app/`
+### Fase B — Mover lógica de Laudos para `app/` (em andamento)
 
-- Criar `app/laudos/` (ou ampliar `app/laudos_helpers.py`) e mover para lá:
-  - Constantes (PARAMS, QUALI_DET, ROTULOS, paths de referência, etc.).
-  - Funções de referência, interpretação, PDF, frases, sidebar (patologia/grau).
-- O `fortcordis_app.py` passa a importar de `app.laudos` e montar `laudos_deps` com menos código no arquivo principal.
+- **Feito:** Paths de laudos centralizados em `app/config.py` (PASTA_LAUDOS, ARQUIVO_REF, ARQUIVO_REF_FELINOS). O app principal importa de `app.config` e não redefine mais esses paths.
+- **Feito:** `app/laudos_deps.py` criado com `build_laudos_deps(**kwargs)` e lista `LAUDOS_DEPS_KEYS` (contrato da página Laudos). O app principal chama `build_laudos_deps(...)` em vez de montar o `SimpleNamespace` inline.
+- **Próximo:** Mover para `app/` (ex.: `app/laudos_refs.py` ou ampliar `laudos_helpers`) as constantes e funções que hoje estão no `fortcordis_app.py` (PARAMS, interpretar, gerar_tabela_padrao, etc.) e fazer `build_laudos_deps` importá-las de lá, reduzindo o código no app principal.
 - **Benefício:** app principal enxuto; alterações em laudos ficam concentradas em `app/laudos*`.
 
 ### Fase C — Camada de serviços (médio prazo)

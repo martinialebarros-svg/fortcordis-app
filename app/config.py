@@ -6,6 +6,12 @@ _ROOT = Path(__file__).resolve().parent.parent
 PASTA_DB = _ROOT
 DB_PATH = _ROOT / "fortcordis.db"
 
+# Laudos: pastas e arquivos de referência (centralizado para Fase B)
+PASTA_LAUDOS = Path.home() / "FortCordis" / "Laudos"
+PASTA_LAUDOS.mkdir(parents=True, exist_ok=True)
+ARQUIVO_REF = "tabela_referencia_caninos.csv"
+ARQUIVO_REF_FELINOS = "tabela_referencia_felinos.csv"
+
 CSS_GLOBAL = """
 <style>
     .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1400px; }
