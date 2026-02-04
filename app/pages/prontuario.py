@@ -14,6 +14,7 @@ from modules.rbac import verificar_permissao
 
 
 def render_prontuario():
+    from datetime import datetime as _dt
     st.title("📋 Prontuário Eletrônico")
 
     # Verifica permissão
@@ -343,7 +344,7 @@ def render_prontuario():
                         cursor_tutor = conn_tutor.cursor()
                         
                         try:
-                            now = datetime.now().isoformat()
+                            now = _dt.now().isoformat()
                             nome_key = _norm_key(tutor_nome) or ("tutor_" + now.replace(":", "").replace("-", "")[:14])
                             cursor_tutor.execute("""
                                 INSERT INTO tutores (
@@ -527,7 +528,7 @@ def render_prontuario():
                             else:
                                 try:
                                     tutor_id = tutores_dict[pac_tutor]
-                                    now = datetime.now().isoformat()
+                                    now = _dt.now().isoformat()
                                     nome_key = _norm_key(pac_nome) or ("pac_" + now.replace(":", "").replace("-", "")[:14])
                                     # Observações: idade, peso, alergias etc. em um único campo se existir
                                     obs_text = f"Idade: {pac_idade_anos}a {pac_idade_meses}m. Peso: {pac_peso}kg. "
@@ -749,14 +750,14 @@ def render_prontuario():
                 with col_info1:
                     data_consulta = st.date_input(
                         "Data da Consulta *",
-                        value=datetime.now().date(),
+                        value=_dt.now().date(),
                         key="cons_data"
                     )
                 
                 with col_info2:
                     hora_consulta = st.time_input(
                         "Hora",
-                        value=datetime.now().time(),
+                        value=_dt.now().time(),
                         key="cons_hora"
                     )
                 
@@ -1148,7 +1149,7 @@ def render_prontuario():
                 dados_laudo.get('raca', ''),
                 dados_laudo.get('idade', ''),
                 float(dados_laudo.get('peso', 0)),
-                dados_laudo.get('data', datetime.now().strftime('%Y-%m-%d')),
+                dados_laudo.get('data', _dt.now().strftime('%Y-%m-%d')),
                 dados_laudo.get('clinica', ''),
                 dados_laudo.get('conclusao', ''),
                 dados_laudo.get('observacoes', ''),
