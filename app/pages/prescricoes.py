@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from app.config import DB_PATH
+from app.config import DB_PATH, formatar_data_br
 from app.services import buscar_pacientes
 from modules.rbac import verificar_permissao
 
@@ -922,7 +922,7 @@ def render_prescricoes():
             st.markdown(f"**{len(historico_df)} prescrições encontradas**")
 
             for idx, presc in historico_df.iterrows():
-                with st.expander(f"📄 {presc['paciente_nome']} - {presc['data_prescricao']}", expanded=False):
+                with st.expander(f"📄 {presc['paciente_nome']} - {formatar_data_br(presc['data_prescricao'])}", expanded=False):
                     col_h1, col_h2 = st.columns(2)
 
                     with col_h1:
@@ -932,7 +932,7 @@ def render_prescricoes():
                         st.markdown(f"**Peso:** {presc['peso_kg']} kg")
 
                     with col_h2:
-                        st.markdown(f"**Data:** {presc['data_prescricao']}")
+                        st.markdown(f"**Data:** {formatar_data_br(presc['data_prescricao'])}")
                         st.markdown(f"**Veterinário:** {presc['medico_veterinario']}")
                         st.markdown(f"**CRMV:** {presc['crmv']}")
 

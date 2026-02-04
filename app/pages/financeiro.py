@@ -6,7 +6,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from app.config import DB_PATH
+from app.config import DB_PATH, formatar_data_br
 from fortcordis_modules.database import (
     dar_baixa_os,
     excluir_os,
@@ -53,6 +53,10 @@ def render_financeiro():
             if not contas.empty:
                 contas_display = contas.drop(columns=["id"], errors="ignore")
                 contas_display["Valor"] = contas_display["Valor"].apply(lambda x: f"R$ {float(x):,.2f}" if x is not None else "—")
+                if "Data" in contas_display.columns:
+                    contas_display["Data"] = contas_display["Data"].apply(formatar_data_br)
+                if "Data pagamento" in contas_display.columns:
+                    contas_display["Data pagamento"] = contas_display["Data pagamento"].apply(formatar_data_br)
                 st.dataframe(contas_display, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhuma OS gerada ainda. Faça um laudo para gerar a primeira!")
@@ -141,7 +145,7 @@ def render_financeiro():
             for p in pendentes:
                 with st.expander(f"📄 {p.get('numero_os', '')} – {p.get('clinica_nome', 'Clínica')} – R$ {float(p.get('valor_final') or 0):,.2f}"):
                     st.write(f"**Descrição:** {p.get('descricao', '')}")
-                    st.write(f"**Data competência:** {p.get('data_competencia', '')}")
+                    st.write(f"**Data competência:** {formatar_data_br(p.get('data_competencia', ''))}")
                     with st.form(key=f"form_baixa_{p.get('id')}"):
                         data_pag = st.date_input("Data do pagamento", value=date.today(), key=f"data_pag_{p.get('id')}")
                         forma_pag = st.selectbox(

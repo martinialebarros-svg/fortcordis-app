@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 
 import streamlit as st
 
-from app.config import DB_PATH
+from app.config import DB_PATH, formatar_data_br
 from fortcordis_modules.database import (
     criar_agendamento,
     listar_agendamentos,
@@ -165,7 +165,7 @@ def render_agendamentos():
         else:
             st.write(f"**Total: {len(agendamentos)} agendamento(s)**")
             for agend in agendamentos:
-                with st.expander(f"🗓️ {agend['data']} às {agend['hora']} - {agend['paciente']} ({agend['status']})"):
+                with st.expander(f"🗓️ {formatar_data_br(agend.get('data', ''))} às {agend['hora']} - {agend['paciente']} ({agend['status']})"):
                     col_a1, col_a2 = st.columns([3, 1])
                     with col_a1:
                         st.write(f"**Paciente:** {agend['paciente']}")
@@ -226,7 +226,9 @@ def render_agendamentos():
                         if agend['status'] in ('Agendado', 'Confirmado'):
                             if st.button("✅ Marcar Realizado", key=f"realizado_{agend['id']}"):
                                 numero_os, erro_os = criar_os_ao_marcar_realizado(agend['id'])
-                                if erro_os:
+                                if erro_os == "already_exists" and numero_os:
+                                    st.info(f"Agendamento marcado como realizado. OS {numero_os} já existia (laudo ou anterior); não foi criada duplicata.")
+                                elif erro_os:
                                     st.warning(f"Agendamento marcado como realizado. Pendência financeira não criada: {erro_os}")
                                 elif numero_os:
                                     st.success(f"Agendamento marcado como realizado! OS {numero_os} criada em Contas a Receber.")

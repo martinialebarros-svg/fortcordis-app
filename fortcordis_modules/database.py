@@ -891,10 +891,22 @@ def _mapear_servico_agendamento_para_nome(servico_texto):
 def criar_os_ao_marcar_realizado(agendamento_id):
     """
     Cria uma OS (ordem de serviço) no financeiro quando o agendamento é marcado como realizado.
-    Usa a tabela de preço da clínica (tabela_preco_id) e o valor do serviço em servico_preco.
-    Retorna (numero_os, None) em sucesso ou (None, mensagem_erro) em falha.
+    Não cria duplicata: se já existir OS para este agendamento (ex.: gerada pelo laudo), retorna a existente.
+    Retorna (numero_os, None) em sucesso, (numero_os, "already_exists") se já havia OS, ou (None, mensagem_erro) em falha.
     """
     garantir_colunas_financeiro()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT numero_os FROM financeiro WHERE agendamento_id = ? LIMIT 1", (agendamento_id,))
+        row_existente = cursor.fetchone()
+        if row_existente:
+            conn.close()
+            return row_existente[0], "already_exists"
+    except Exception:
+        pass
+    conn.close()
+
     agend = buscar_agendamento_por_id(agendamento_id)
     if not agend:
         return None, "Agendamento não encontrado."
@@ -927,10 +939,20 @@ def criar_os_ao_marcar_realizado(agendamento_id):
         )
         row_preco = cursor.fetchone()
         valor_final = float(row_preco[0]) if row_preco else valor_base_fallback
-        numero_os = gerar_numero_os()
         data_atend = agend.get("data") or agend.get("data_agendamento")
         data_comp = str(data_atend)[:10] if data_atend else datetime.now().strftime("%Y-%m-%d")
         descricao = f"{servico_texto} - {agend.get('paciente', '')}"
+        # Não criar duplicata se já existir OS para mesmo evento (ex.: gerada ao arquivar o laudo)
+        cursor.execute("""
+            SELECT numero_os FROM financeiro
+            WHERE clinica_id = ? AND data_competencia = ? AND descricao = ?
+            LIMIT 1
+        """, (clinica_id, data_comp, descricao))
+        row_existente_os = cursor.fetchone()
+        if row_existente_os:
+            conn.close()
+            return row_existente_os[0], "already_exists"
+        numero_os = gerar_numero_os()
         cursor.execute("""
             INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
             VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)

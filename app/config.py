@@ -1,8 +1,37 @@
 # Configuração central: versão, caminhos, CSS, logging
 import logging
+from datetime import date, datetime
 from pathlib import Path
 
 VERSAO_DEPLOY = "2026-02-01"
+
+
+def formatar_data_br(val):
+    """
+    Formata data para exibição no padrão brasileiro dd/mm/aaaa.
+    Aceita: str (YYYY-MM-DD ou dd/mm/yyyy), date, datetime, None.
+    Retorna string dd/mm/yyyy ou '—' se vazio/None.
+    """
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return "—"
+    if isinstance(val, (date, datetime)):
+        return val.strftime("%d/%m/%Y")
+    s = str(val).strip()[:10]
+    if not s:
+        return "—"
+    # Já está em dd/mm/yyyy (ex.: 31/01/2026)
+    if "/" in s and len(s) >= 8:
+        parts = s.split("/")
+        if len(parts) == 3 and len(parts[0]) <= 2 and len(parts[1]) <= 2 and len(parts[2]) == 4:
+            return s[:10] if len(s) >= 10 else s
+    # ISO YYYY-MM-DD
+    if "-" in s and len(s) >= 10:
+        try:
+            dt = datetime.strptime(s[:10], "%Y-%m-%d")
+            return dt.strftime("%d/%m/%Y")
+        except ValueError:
+            pass
+    return s
 
 # Logging: nível INFO para módulos app.*; erros vão para stderr / Streamlit Cloud logs
 def _setup_app_logging():

@@ -13,7 +13,7 @@ import streamlit as st
 from fpdf import FPDF
 from PIL import Image
 
-from app.config import DB_PATH
+from app.config import DB_PATH, formatar_data_br
 from app.db import _db_init
 from app.laudos_helpers import (
     ARQUIVO_FRASES,
@@ -1131,7 +1131,9 @@ def render_laudos(deps=None):
             colunas_exib = ["data", "clinica", "animal", "tutor", "tipo_exame"]
             df_uniq = df_banco[colunas_exib].drop_duplicates(keep="first")
             n_uniq, n_total = len(df_uniq), len(df_banco)
-            st.dataframe(df_uniq, use_container_width=True, hide_index=True)
+            df_exib = df_uniq.copy()
+            df_exib["data"] = df_exib["data"].apply(formatar_data_br)
+            st.dataframe(df_exib, use_container_width=True, hide_index=True)
             texto_total = f"**{n_uniq}** exame(s) únicos" + (f" (de **{n_total}** no banco — repetidos por importações anteriores; importe o backup **apenas uma vez**)." if n_uniq < n_total else ".")
             st.caption(
                 f"{texto_total} "
@@ -1166,9 +1168,11 @@ def render_laudos(deps=None):
             df_arq = pd.DataFrame(laudos_arq)
             df_arq["data"] = df_arq["data"].astype(str)
             colunas_exib_arq = ["data", "clinica", "animal", "tutor", "tipo_exame"]
-            st.dataframe(df_arq[colunas_exib_arq], use_container_width=True, hide_index=True)
+            df_arq_exib = df_arq[colunas_exib_arq].copy()
+            df_arq_exib["data"] = df_arq_exib["data"].apply(formatar_data_br)
+            st.dataframe(df_arq_exib, use_container_width=True, hide_index=True)
             st.caption(f"**{len(laudos_arq)}** exame(s) da pasta no banco.")
-            opcoes_arq = [f'{r["data"]} | {r["animal"]} | {r["tutor"]} | {r["clinica"]}' for r in laudos_arq]
+            opcoes_arq = [f'{formatar_data_br(r["data"])} | {r["animal"]} | {r["tutor"]} | {r["clinica"]}' for r in laudos_arq]
             idx_arq = st.selectbox("Selecione um exame para baixar (JSON/PDF)", range(len(opcoes_arq)), format_func=lambda i: opcoes_arq[i], key="sel_laudo_arquivo")
             row_arq = laudos_arq[idx_arq]
             blob_row = obter_laudo_arquivo_por_id(row_arq["id_laudo_arquivo"])
@@ -1297,13 +1301,15 @@ def render_laudos(deps=None):
             df_f = df_busca[m].sort_values(["data_dt", "clinica", "animal"], ascending=[False, True, True])
 
             st.write(f"**Resultados:** {len(df_f)}")
-            st.dataframe(df_f[["data", "clinica", "animal", "tutor"]], use_container_width=True, hide_index=True)
+            df_f_exib = df_f[["data", "clinica", "animal", "tutor"]].copy()
+            df_f_exib["data"] = df_f_exib["data"].apply(lambda x: formatar_data_br(str(x)) if x is not None else "—")
+            st.dataframe(df_f_exib, use_container_width=True, hide_index=True)
 
             st.markdown("---")
             st.subheader("Baixar arquivo do exame encontrado")
 
             # seleção por linha (simples: selectbox com o stem)
-            opcoes = df_f.apply(lambda r: f'{r["data"]} | {r["animal"]} | {r["tutor"]} | {r["clinica"]}', axis=1).tolist()
+            opcoes = df_f.apply(lambda r: f'{formatar_data_br(str(r["data"]) if r["data"] is not None else "")} | {r["animal"]} | {r["tutor"]} | {r["clinica"]}', axis=1).tolist()
 
             if not opcoes:
                 st.info("Nenhum exame corresponde aos filtros.")
@@ -2237,19 +2243,28 @@ def render_laudos(deps=None):
                                     if serv_row:
                                         servico_id_os = serv_row[0]
                                         vb, vd, vf = calcular_valor_final(servico_id_os, clinica_id_os)
-                                        numero_os = gerar_numero_os()
                                         # Data da coluna "Data" no financeiro = data do exame (não a data de hoje)
                                         data_comp = _normalizar_data_str(data_exame)
                                         descricao_os = f"Ecocardiograma - {nome_animal or 'Paciente'}"
+                                        # Não criar OS duplicada: se já existir para mesma clínica/data/descrição (ex.: gerada ao marcar agendamento como realizado)
                                         cursor_fin.execute("""
-                                            INSERT INTO financeiro (
-                                                clinica_id, numero_os, descricao,
-                                                valor_bruto, valor_desconto, valor_final,
-                                                status_pagamento, data_competencia
-                                            ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-                                        """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
-                                        conn_fin.commit()
-                                        _ = st.success(f"💰 OS {numero_os} criada: R$ {vf:,.2f} (pendente)")
+                                            SELECT numero_os FROM financeiro
+                                            WHERE clinica_id = ? AND data_competencia = ? AND descricao = ?
+                                            LIMIT 1
+                                        """, (clinica_id_os, data_comp, descricao_os))
+                                        if cursor_fin.fetchone():
+                                            _ = st.info("💰 OS já existente para este exame (não foi criada duplicata).")
+                                        else:
+                                            numero_os = gerar_numero_os()
+                                            cursor_fin.execute("""
+                                                INSERT INTO financeiro (
+                                                    clinica_id, numero_os, descricao,
+                                                    valor_bruto, valor_desconto, valor_final,
+                                                    status_pagamento, data_competencia
+                                                ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
+                                            """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
+                                            conn_fin.commit()
+                                            _ = st.success(f"💰 OS {numero_os} criada: R$ {vf:,.2f} (pendente)")
                                     else:
                                         _ = st.info("💡 Cadastre o serviço 'Ecocardiograma' em Cadastros > Serviços para gerar OS automática.")
                                 else:
