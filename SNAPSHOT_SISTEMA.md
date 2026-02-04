@@ -25,7 +25,9 @@ FortCordis_Novo/
 │   ├── db.py                  # Conexão e upserts (clínica, tutor, paciente)
 │   ├── utils.py               # Utilitários (nome_proprio_ptbr, _norm_key, _clean_spaces)
 │   ├── laudos_helpers.py      # Frases, schema det, listar/obter laudos do banco
-│   ├── laudos_refs.py         # PARAMS, tabelas referência caninos/felinos, interpretar (Fase B)
+│   ├── laudos_refs.py         # PARAMS, tabelas referência, interpretar, listar_registros_arquivados_cached (Fase B)
+│   ├── laudos_banco.py        # tabelas laudos, salvar/buscar/atualizar laudos (Fase B)
+│   ├── laudos_pdf.py          # marca d'água, imagens PDF, nome base, normalizar data (Fase B)
 │   ├── ESTRUTURA_MODULOS.md   # Detalhes da modularização
 │   └── pages/
 │       ├── dashboard.py       # render_dashboard()
@@ -122,9 +124,8 @@ Git: configurar `user.name` e `user.email` se ainda não estiverem definidos.
 
 ## 9. Próximos passos (modularização e otimização)
 
-- **Fase B (Laudos):** Mover a lógica de Laudos que ainda está no `fortcordis_app.py` (PARAMS, referências, PDF, frases, tabelas caninos/felinos, etc.) para módulos em `app/` (ex.: `app/laudos_refs.py`, `app/laudos_pdf.py`, ampliar `app/laudos_helpers.py`). Ver **SUGESTOES_OTIMIZACAO.md**.
-- **Código duplicado:** Há funções definidas duas vezes no `fortcordis_app.py` (ex.: `frase_det`, `aplicar_frase_det_na_tela`); remover uma das cópias e centralizar em `app/`.
-- Deixar o `fortcordis_app.py` apenas com: imports, set_page_config, CSS, auth, menu e chamadas `render_*()` (e `build_laudos_deps` até a Fase B estar concluída).
+- **Fase B (Laudos):** Concluída. A lógica de Laudos está em `app/laudos_refs.py`, `app/laudos_pdf.py`, `app/laudos_banco.py`, `app/laudos_helpers.py`. O `build_laudos_deps()` em `app/laudos_deps.py` importa desses módulos; o app chama `build_laudos_deps()` sem argumentos.
+- **Prioridade média:** Logging, tratamento de erros padronizado, type hints, config completo em `app.config`. Ver **SUGESTOES_OTIMIZACAO.md**.
 
 Ver também **GUIA_OTIMIZACAO.md** e **SUGESTOES_OTIMIZACAO.md** para prioridades e passos detalhados.
 

@@ -16,6 +16,7 @@ from PIL import Image
 
 from app.config import DB_PATH
 from app.db import _db_conn, _db_init
+from app.laudos_banco import _criar_tabelas_laudos_se_nao_existirem
 from app.utils import _norm_key
 from modules.rbac import verificar_permissao, obter_permissoes_usuario
 

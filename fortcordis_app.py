@@ -30,6 +30,26 @@ except ImportError:
     ARQUIVO_REF = "tabela_referencia_caninos.csv"
     ARQUIVO_REF_FELINOS = "tabela_referencia_felinos.csv"
 
+# Banco de laudos (Fase B)
+from app.laudos_banco import (
+    _criar_tabelas_laudos_se_nao_existirem,
+    salvar_laudo_no_banco,
+    buscar_laudos,
+    carregar_laudo_para_edicao,
+    atualizar_laudo_editado,
+)
+
+# PDF e helpers de nome/data para laudos (Fase B)
+from app.laudos_pdf import (
+    criar_imagem_esmaecida,
+    _caminho_marca_dagua,
+    _img_ext_from_name,
+    obter_imagens_para_pdf,
+    _limpar_texto_filename,
+    _normalizar_data_str,
+    montar_nome_base_arquivo,
+)
+
 # Referências e tabelas de laudos (Fase B)
 from app.laudos_refs import (
     PARAMS,
@@ -113,243 +133,6 @@ if st.session_state.get("db_was_recovered"):
 st.markdown("---")
 # ============================================================
 
-
-def _criar_tabelas_laudos_se_nao_existirem(cursor):
-    """Cria tabelas de laudos se não existirem (Streamlit Cloud / primeiro deploy)."""
-    for nome_tabela, sql in [
-        ("laudos_ecocardiograma", """
-            CREATE TABLE IF NOT EXISTS laudos_ecocardiograma (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                paciente_id INTEGER, data_exame TEXT, clinica_id INTEGER, veterinario_id INTEGER,
-                tipo_exame TEXT DEFAULT 'ecocardiograma',
-                nome_paciente TEXT, especie TEXT, raca TEXT, idade TEXT, peso REAL,
-                modo_m TEXT, modo_bidimensional TEXT, doppler TEXT, conclusao TEXT, observacoes TEXT,
-                achados_normais TEXT, achados_alterados TEXT,
-                arquivo_xml TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
-                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, criado_por INTEGER
-            )
-        """),
-        ("laudos_eletrocardiograma", """
-            CREATE TABLE IF NOT EXISTS laudos_eletrocardiograma (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                paciente_id INTEGER, data_exame TEXT, clinica_id INTEGER, veterinario_id INTEGER,
-                tipo_exame TEXT DEFAULT 'eletrocardiograma',
-                nome_paciente TEXT, especie TEXT, raca TEXT, idade TEXT, peso REAL,
-                ritmo TEXT, frequencia_cardiaca INTEGER, conclusao TEXT, observacoes TEXT,
-                arquivo_xml TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
-                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, criado_por INTEGER
-            )
-        """),
-        ("laudos_pressao_arterial", """
-            CREATE TABLE IF NOT EXISTS laudos_pressao_arterial (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                paciente_id INTEGER, data_exame TEXT, clinica_id INTEGER, veterinario_id INTEGER,
-                tipo_exame TEXT DEFAULT 'pressao_arterial',
-                nome_paciente TEXT, especie TEXT, raca TEXT, idade TEXT, peso REAL,
-                pressao_sistolica INTEGER, pressao_diastolica INTEGER, conclusao TEXT, observacoes TEXT,
-                arquivo_xml TEXT, arquivo_pdf TEXT, status TEXT DEFAULT 'finalizado',
-                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP, criado_por INTEGER
-            )
-        """),
-    ]:
-        cursor.execute(sql)
-
-
-def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
-    """Salva o laudo no banco de dados - VERSÃO FINAL AJUSTADA"""
-    # Usar pasta do projeto (funciona no Streamlit Cloud)
-    _db = Path(__file__).resolve().parent / "fortcordis.db"
-    try:
-        conn = sqlite3.connect(str(_db))
-        cursor = conn.cursor()
-        _criar_tabelas_laudos_se_nao_existirem(cursor)
-        conn.commit()
-        
-        tabelas = {
-            "ecocardiograma": "laudos_ecocardiograma",
-            "eletrocardiograma": "laudos_eletrocardiograma",
-            "pressao_arterial": "laudos_pressao_arterial"
-        }
-        
-        tabela = tabelas.get(tipo_exame.lower())
-        
-        if not tabela:
-            return None, f"Tipo inválido: {tipo_exame}"
-        
-        # Descobre quais colunas existem
-        cursor.execute(f"PRAGMA table_info({tabela})")
-        colunas_existentes = [col[1] for col in cursor.fetchall()]
-        
-        # Mapeamento completo baseado na estrutura real
-        dados_possiveis = {
-            # Paciente
-            'nome_paciente': dados_laudo.get('nome_animal', ''),
-            'especie': dados_laudo.get('especie', ''),
-            'raca': dados_laudo.get('raca', ''),
-            'idade': dados_laudo.get('idade', ''),
-            'peso': float(dados_laudo.get('peso', 0)) if dados_laudo.get('peso') else None,
-            
-            # Data e tipo
-            'data_exame': dados_laudo.get('data', datetime.now().strftime('%Y-%m-%d')),
-            'tipo_exame': tipo_exame,
-            
-            # IDs (deixa NULL por enquanto, você pode preencher depois)
-            'paciente_id': None,
-            'clinica_id': None,
-            'veterinario_id': None,
-            'criado_por': None,
-            
-            # Achados (específico de eco)
-            'modo_m': dados_laudo.get('modo_m', ''),
-            'modo_bidimensional': dados_laudo.get('modo_2d', ''),
-            'doppler': dados_laudo.get('doppler', ''),
-            'achados_normais': dados_laudo.get('achados_normais', ''),
-            'achados_alterados': dados_laudo.get('achados_alterados', ''),
-            
-            # Conclusão
-            'conclusao': dados_laudo.get('conclusao', ''),
-            'observacoes': dados_laudo.get('observacoes', ''),
-            
-            # Arquivos
-            'arquivo_xml': str(caminho_json),  # Usa JSON no lugar do XML
-            'arquivo_pdf': str(caminho_pdf),
-            
-            # Status
-            'status': 'finalizado'
-        }
-        
-        # Filtra apenas colunas que existem
-        colunas_usar = []
-        valores_usar = []
-        
-        for col in colunas_existentes:
-            # Pula colunas auto-geradas ou com constraints especiais
-            if col in ['id', 'data_criacao', 'data_modificacao']:
-                continue
-            
-            if col in dados_possiveis:
-                valor = dados_possiveis[col]
-                # Só adiciona se não for None ou se a coluna aceitar NULL
-                colunas_usar.append(col)
-                valores_usar.append(valor)
-        
-        if not colunas_usar:
-            return None, "Nenhuma coluna para inserir"
-        
-        # Monta query
-        placeholders = ', '.join(['?' for _ in colunas_usar])
-        colunas_str = ', '.join(colunas_usar)
-        
-        query = f"INSERT INTO {tabela} ({colunas_str}) VALUES ({placeholders})"
-        
-        cursor.execute(query, valores_usar)
-        
-        laudo_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        
-        return laudo_id, None
-        
-    except Exception as e:
-        return None, str(e)
-
-def buscar_laudos(tipo_exame=None, nome_paciente=None):
-    """Busca laudos no banco"""
-    _db = Path(__file__).resolve().parent / "fortcordis.db"
-    try:
-        conn = sqlite3.connect(str(_db))
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        tabelas = [
-            "laudos_ecocardiograma",
-            "laudos_eletrocardiograma", 
-            "laudos_pressao_arterial"
-        ]
-        
-        laudos = []
-        
-        for tabela in tabelas:
-            query = f"""
-                SELECT 
-                    id, tipo_exame, nome_paciente, especie, data_exame,
-                    nome_clinica, arquivo_json, arquivo_pdf
-                FROM {tabela}
-                WHERE 1=1
-            """
-            params = []
-            
-            if nome_paciente:
-                query += " AND UPPER(nome_paciente) LIKE UPPER(?)"
-                params.append(f"%{nome_paciente}%")
-            
-            query += " ORDER BY data_exame DESC, id DESC"
-            
-            cursor.execute(query, params)
-            
-            for row in cursor.fetchall():
-                laudos.append(dict(row))
-        
-        conn.close()
-        
-        laudos.sort(key=lambda x: x.get('data_exame', ''), reverse=True)
-        
-        return laudos, None
-        
-    except Exception as e:
-        return [], str(e)
-
-def carregar_laudo_para_edicao(caminho_json):
-    """Carrega JSON do laudo para editar"""
-    try:
-        json_path = Path(caminho_json)
-        
-        if not json_path.exists():
-            return None, "Arquivo não encontrado"
-        
-        with open(json_path, 'r', encoding='utf-8') as f:
-            dados = json.load(f)
-        
-        return dados, None
-        
-    except Exception as e:
-        return None, str(e)
-
-def atualizar_laudo_editado(laudo_id, tipo_exame, caminho_json, dados_atualizados, novo_pdf_path=None):
-    """Atualiza laudo após edição"""
-    try:
-        # Atualiza JSON
-        with open(caminho_json, 'w', encoding='utf-8') as f:
-            json.dump(dados_atualizados, f, ensure_ascii=False, indent=2)
-        
-        # Atualiza banco se necessário (usa pasta do projeto - Streamlit Cloud)
-        if novo_pdf_path:
-            _db = Path(__file__).resolve().parent / "fortcordis.db"
-            conn = sqlite3.connect(str(_db))
-            cursor = conn.cursor()
-            
-            tabelas = {
-                "ecocardiograma": "laudos_ecocardiograma",
-                "eletrocardiograma": "laudos_eletrocardiograma",
-                "pressao_arterial": "laudos_pressao_arterial"
-            }
-            
-            tabela = tabelas.get(tipo_exame.lower())
-            
-            cursor.execute(f"""
-                UPDATE {tabela}
-                SET arquivo_pdf = ?, data_modificacao = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (str(novo_pdf_path), laudo_id))
-            
-            conn.commit()
-            conn.close()
-        
-        return True, None
-        
-    except Exception as e:
-        return False, str(e)
-
 # ============================================================================
 # MÓDULOS DE GESTÃO (NOVOS)
 # ============================================================================
@@ -411,6 +194,12 @@ from app.laudos_helpers import (
     obter_imagens_laudo_arquivo,
     contar_laudos_do_banco,
     contar_laudos_arquivos_do_banco,
+    montar_chave_frase,
+    obter_entry_frase,
+    aplicar_entry_salva,
+    analisar_criterios_clinicos,
+    complementar_regurgitacoes_nas_valvas,
+    _split_pat_grau,
 )
 
 
@@ -627,369 +416,12 @@ if "lista_especies" not in st.session_state:
 if "cad_especie" not in st.session_state or not str(st.session_state.get("cad_especie") or "").strip():
     st.session_state["cad_especie"] = "Canina"
 
-# ===============================
-# Arquivos do sistema
-# ===============================
-# Marca d'água em pasta gravável (Streamlit Cloud pode ter app dir read-only)
-MARCA_DAGUA_TEMP = str(Path(tempfile.gettempdir()) / "fortcordis_watermark_faded.png")
-ARQUIVO_FRASES = str((Path.home() / "FortCordis" / "frases_personalizadas.json"))
-Path(ARQUIVO_FRASES).parent.mkdir(parents=True, exist_ok=True)
-
-# Arquivos de referência e pasta Laudos vêm de app.config (PASTA_LAUDOS, ARQUIVO_REF, ARQUIVO_REF_FELINOS)
-
-
-def criar_imagem_esmaecida(input_path, output_path, opacidade=0.10):
-    """Gera versão esmaecida do logo para marca d'água."""
-    try:
-        img = Image.open(input_path).convert("RGBA")
-        dados = list(img.getdata())
-        novos_dados = []
-        for item in dados:
-            novo_alpha = int(item[3] * opacidade)
-            novos_dados.append((item[0], item[1], item[2], novo_alpha))
-        img.putdata(novos_dados)
-        img.save(output_path, "PNG")
-        return True
-    except Exception:
-        return False
-
-
-def _caminho_marca_dagua():
-    """Retorna caminho da marca d'água; cria na primeira geração (lazy) para não gastar no Cloud."""
-    if os.path.exists("logo.png") and not os.path.exists(MARCA_DAGUA_TEMP):
-        try:
-            criar_imagem_esmaecida("logo.png", MARCA_DAGUA_TEMP, opacidade=0.05)
-        except Exception:
-            pass
-    if os.path.exists(MARCA_DAGUA_TEMP):
-        return MARCA_DAGUA_TEMP
-    if os.path.exists("logo.png"):
-        return "logo.png"
-    return None
-
-
-# ==========================================================
-# 📷 Imagens do exame (carregadas do arquivo e/ou adicionadas manualmente)
-# ==========================================================
-def _img_ext_from_name(nome: str) -> str:
-    try:
-        ext = (Path(nome).suffix or "").lower()
-    except Exception:
-        ext = ""
-    if ext not in [".jpg", ".jpeg", ".png"]:
-        ext = ".jpg"
-    # padroniza jpeg para .jpg
-    if ext == ".jpeg":
-        ext = ".jpg"
-    return ext
-
-
-def obter_imagens_para_pdf():
-    """Retorna lista de imagens do exame (bytes) para preview e PDF.
-    - imagens_carregadas: vindas do JSON arquivado
-    - imagens_upload_novas: adicionadas manualmente na aba 📷 Imagens
-    """
-    imgs = []
-
-    # 1) Imagens carregadas do exame arquivado
-    carregadas = st.session_state.get("imagens_carregadas", []) or []
-    for it in carregadas:
-        if isinstance(it, dict) and it.get("bytes"):
-            imgs.append({
-                "name": str(it.get("name") or "imagem"),
-                "bytes": bytes(it.get("bytes")),
-                "ext": _img_ext_from_name(it.get("name") or "")
-            })
-
-    # 2) Novas imagens do uploader
-    novas = st.session_state.get("imagens_upload_novas", None)
-    if novas:
-        for f in novas:
-            try:
-                b = bytes(f.getbuffer())
-            except Exception:
-                try:
-                    b = f.getvalue()
-                except Exception:
-                    b = None
-            if not b:
-                continue
-            imgs.append({
-                "name": getattr(f, "name", "imagem"),
-                "bytes": b,
-                "ext": _img_ext_from_name(getattr(f, "name", "") or "")
-            })
-
-    return imgs
-
-
 # Banco: usar mesmo DB do app (fortcordis_modules.database)
 if "database" in sys.modules:
     sys.modules["database"].DB_PATH = DB_PATH
 # Conexão e upserts locais (clinicas/tutores/pacientes) em app/db.py
 from app.db import _db_conn_safe, _db_conn, _db_init, db_upsert_clinica, db_upsert_tutor, db_upsert_paciente
 
-def _limpar_texto_filename(s: str) -> str:
-    s = (s or "").strip()
-    if not s:
-        return "SEM_DADO"
-    # remove acentos
-    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
-    # troca espaços por underscore
-    s = re.sub(r"\s+", "_", s)
-    # mantém só letras, números, _ e -
-    s = re.sub(r"[^A-Za-z0-9_\-]", "", s)
-    # evita nomes enormes
-    return s[:60] if len(s) > 60 else s
-
-import re
-import unicodedata
-
-_PREPOSICOES_MINUSCULAS = {
-    "de", "da", "das", "do", "dos",
-    "e", "em", "na", "nas", "no", "nos",
-    "para", "por", "com", "sem", "a", "as", "o", "os"
-}
-
-def _limpar_espacos(s: str) -> str:
-    s = re.sub(r"\s+", " ", (s or "").strip())
-    return s
-
-def capitalizar_nome(s: str) -> str:
-    """
-    'spike' -> 'Spike'
-    'shih tzu' -> 'Shih Tzu'
-    'filhote de srd' -> 'Filhote de Srd' (mantém preposições minúsculas)
-    """
-    s = _limpar_espacos(s)
-    if not s:
-        return ""
-
-    palavras = s.split(" ")
-    out = []
-    for i, w in enumerate(palavras):
-        wl = w.lower()
-        # mantém preposições minúsculas (exceto se for primeira palavra)
-        if i != 0 and wl in _PREPOSICOES_MINUSCULAS:
-            out.append(wl)
-        else:
-            out.append(wl[:1].upper() + wl[1:])
-    return " ".join(out)
-
-def capitalizar_frase(s: str) -> str:
-    """
-    'canina' -> 'Canina'
-    'FÊMEA' -> 'Fêmea' (desde que venha com acento correto; se vier sem acento, mantém sem acento)
-    """
-    s = _limpar_espacos(s).lower()
-    if not s:
-        return ""
-    return s[:1].upper() + s[1:]
-
-
-def _normalizar_data_str(data_exame: str) -> str:
-    """
-    Aceita formatos comuns:
-    - 'YYYYMMDD' (ex.: 20251220)
-    - 'YYYY-MM-DD'
-    - 'DD/MM/YYYY'
-    Se não conseguir, usa data de hoje.
-    Retorna 'YYYY-MM-DD'
-    """
-    s = (data_exame or "").strip()
-    if not s:
-        return date.today().strftime("%Y-%m-%d")
-
-    # YYYYMMDD
-    if re.fullmatch(r"\d{8}", s):
-        try:
-            dt = datetime.strptime(s, "%Y%m%d")
-            return dt.strftime("%Y-%m-%d")
-        except:
-            pass
-
-    # YYYY-MM-DD
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
-        return s
-
-    # DD/MM/YYYY
-    if re.fullmatch(r"\d{2}/\d{2}/\d{4}", s):
-        try:
-            dt = datetime.strptime(s, "%d/%m/%Y")
-            return dt.strftime("%Y-%m-%d")
-        except:
-            pass
-
-    # tentativa genérica: pega só números e tenta YYYYMMDD
-    nums = re.sub(r"\D", "", s)
-    if len(nums) >= 8:
-        try:
-            dt = datetime.strptime(nums[:8], "%Y%m%d")
-            return dt.strftime("%Y-%m-%d")
-        except:
-            pass
-
-    return date.today().strftime("%Y-%m-%d")
-
-def montar_nome_base_arquivo(*, data_exame: str, animal: str, tutor: str, clinica: str) -> str:
-    d = _normalizar_data_str(data_exame)
-    a = _limpar_texto_filename(animal)
-    t = _limpar_texto_filename(tutor)
-    c = _limpar_texto_filename(clinica)
-    return f"{d}__{a}__{t}__{c}"
-
-
-# Cérebro Clínico (Mantido)
-def analisar_criterios_clinicos(dados, peso, patologia, grau_refluxo, tem_congestao, grau_geral):
-    chave = montar_chave_frase(patologia, grau_refluxo, grau_geral)
-
-    res_base = st.session_state['db_frases'].get(chave, {})
-    if not res_base and patologia != "Normal":
-        for k, v in st.session_state['db_frases'].items():
-            if patologia in k:
-                res_base = v.copy()
-                break
-
-    if not res_base:
-        res_base = {'conclusao': f"{patologia}"}
-
-    txt = res_base.copy()
-
-    # ... (resto do seu código igual)
-
-
-    if patologia == "Endocardiose Mitral":
-        # pega o que veio do editor
-        conclusao_editor = (txt.get("conclusao") or "").strip()
-
-        try:
-            r_lvidd = calcular_referencia_tabela("LVIDd", peso)[0]
-            l_lvidd = r_lvidd[1] if r_lvidd[1] else 999
-
-            r_laao = calcular_referencia_tabela("LA_Ao", peso)[0]
-            l_laao = r_laao[1] if r_laao[1] else 1.6
-        except:
-            l_lvidd, l_laao = 999, 1.6
-
-        val_laao, val_lvidd = dados.get('LA_Ao', 0), dados.get('LVIDd', 0)
-        aum_ae, aum_ve = (val_laao >= l_laao), (val_lvidd > l_lvidd)
-
-        # você pode manter valvas automático OU só se estiver vazio também
-        if not (txt.get("valvas") or "").strip():
-            txt['valvas'] = f"Valva mitral espessada. Insuficiência {grau_refluxo.lower()}."
-
-        # ✅ só calcula e escreve a conclusão automática se o editor NÃO tiver conclusão
-        if not conclusao_editor:
-            if tem_congestao:
-                txt['conclusao'] = f"Endocardiose Mitral Estágio C (ACVIM). Refluxo {grau_refluxo}. Sinais de ICC."
-            elif aum_ae and aum_ve:
-                txt['conclusao'] = f"Endocardiose Mitral Estágio B2 (ACVIM). Refluxo {grau_refluxo} com remodelamento."
-            elif aum_ae:
-                txt['conclusao'] = f"Endocardiose Mitral (Refluxo {grau_refluxo}) com aumento atrial esquerdo."
-            else:
-                txt['conclusao'] = f"Endocardiose Mitral Estágio B1 (ACVIM). Refluxo {grau_refluxo}."
-
-
-
-    """
-    Copia os textos corridos (txt_*) para os subcampos detalhados (q_*).
-    Eu, particularmente, recomendo preencher só os campos mais prováveis
-    e não “inventar” texto para válvulas/câmaras que não foram citadas.
-    """
-
-    """
-    Complementa os campos qualitativos de valvas (q_valvas_*) com informação de regurgitação
-    quando houver Vmax > 0 nas medidas.
-
-    Observação (opinião técnica): Vmax NÃO classifica bem gravidade do refluxo sozinho.
-    Então eu descrevo 'presente' + Vmax, e só uso o grau da mitral quando você já seleciona no sidebar.
-    """
-    dados = st.session_state.get("dados_atuais", {}) or {}
-
-    mr = float(dados.get("MR_Vmax", 0.0) or 0.0)
-    tr = float(dados.get("TR_Vmax", 0.0) or 0.0)
-    ar = float(dados.get("AR_Vmax", 0.0) or 0.0)
-    pr = float(dados.get("PR_Vmax", 0.0) or 0.0)
-
-    def append_if_needed(key: str, extra: str):
-        extra = (extra or "").strip()
-        if not extra:
-            return
-        atual = (st.session_state.get(key, "") or "").strip()
-        if extra.lower() in atual.lower():
-            return
-        st.session_state[key] = (atual + ("\n" if atual else "") + extra).strip()
-
-    # Mitral
-    if mr > 0:
-        extra = f"Refluxo mitral presente ao Doppler (Vmax {mr:.2f} m/s)."
-        append_if_needed("q_valvas_mitral", extra)
-
-    # Se for Endocardiose Mitral, aí sim usa o grau escolhido
-    if mr > 0 and patologia == "Endocardiose Mitral" and grau_refluxo:
-        extra = f"Refluxo mitral {grau_refluxo.lower()} ao Doppler (Vmax {mr:.2f} m/s)."
-        append_if_needed("q_valvas_mitral", extra)
-
-    # Tricúspide
-    if tr > 0:
-        extra = f"Refluxo tricúspide presente ao Doppler (Vmax {tr:.2f} m/s)."
-        append_if_needed("q_valvas_tricuspide", extra)
-
-    # Aórtica
-    if ar > 0:
-        extra = f"Refluxo aórtico presente ao Doppler (Vmax {ar:.2f} m/s)."
-        append_if_needed("q_valvas_aortica", extra)
-
-    # Pulmonar
-    if pr > 0:
-        extra = f"Refluxo pulmonar presente ao Doppler (Vmax {pr:.2f} m/s)."
-        append_if_needed("q_valvas_pulmonar", extra)
-
-
-
-    def set_if_empty(key, value):
-        value = (value or "").strip()
-        if not value:
-            return
-        # só preenche se o campo ainda estiver vazio (pra não apagar o que você digitou)
-        if not (st.session_state.get(key, "") or "").strip():
-            st.session_state[key] = value
-
-    txt_valvas = st.session_state.get("txt_valvas", "")
-    txt_camaras = st.session_state.get("txt_camaras", "")
-    txt_funcao = st.session_state.get("txt_funcao", "")
-    txt_pericardio = st.session_state.get("txt_pericardio", "")
-    txt_vasos = st.session_state.get("txt_vasos", "")
-    txt_ad_vd = st.session_state.get("txt_ad_vd", "")
-
-    # --- Valvas ---
-    # Endocardiose mitral: joga a sugestão principalmente no campo Mitral
-    if patologia == "Endocardiose Mitral":
-        set_if_empty("q_valvas_mitral", txt_valvas)
-    else:
-        # outras patologias: coloca a sugestão em Mitral como “campo principal”
-        set_if_empty("q_valvas_mitral", txt_valvas)
-
-    # --- Câmaras ---
-    # Texto corrido geralmente fala de câmaras esquerdas; joga em AE e VE
-    set_if_empty("q_camaras_ae", txt_camaras)
-    set_if_empty("q_camaras_ve", txt_camaras)
-
-    # Texto subjetivo AD/VD joga para as câmaras direitas
-    set_if_empty("q_camaras_ad", txt_ad_vd)
-    set_if_empty("q_camaras_vd", txt_ad_vd)
-
-    # --- Função ---
-    # Texto corrido vai em “Sistólica VE” como principal
-    set_if_empty("q_funcao_sistolica_ve", txt_funcao)
-
-    # --- Pericárdio ---
-    set_if_empty("q_pericardio_efusao", txt_pericardio)
-
-    # --- Vasos ---
-    set_if_empty("q_vasos_aorta", txt_vasos)
-
-# ==========================================
 # 5. APP PRINCIPAL
 # ==========================================
 if os.path.exists("logo.png"): st.sidebar.image("logo.png", width=150)
@@ -1031,15 +463,7 @@ st.sidebar.caption("Versão 2.0 — Sistema Integrado")
 st.sidebar.caption(f"Deploy: {VERSAO_DEPLOY}")
 
 # --- Sidebar: Suspeita (dinâmica) ---
-# --- helpers: quebrar "Patologia (Grau)" ---
-def _split_pat_grau(chave: str):
-    s = (chave or "").strip()
-    if s.endswith(")") and " (" in s:
-        base, resto = s.rsplit(" (", 1)
-        grau = resto[:-1].strip()  # tira o ")"
-        return base.strip(), grau
-    return s, ""
-
+# _split_pat_grau importado de app.laudos_helpers
 def _listar_patologias_base(db: dict):
     bases = set()
     for k in (db or {}).keys():
@@ -1262,124 +686,6 @@ else:
     sb_grau_geral = "Normal"
 
 
-def montar_chave_frase(patologia: str, grau_refluxo: str, grau_geral: str) -> str:
-    if patologia == "Normal":
-        return "Normal (Normal)"
-    if patologia == "Endocardiose Mitral":
-        return f"{patologia} ({grau_refluxo})"
-    return f"{patologia} ({grau_geral})"
-
-
-# ==========================================================
-# ✅ Match robusto de chaves no banco de frases
-# (evita falhas por variações de caixa/acentos/"Moderado" vs "Moderada")
-# ==========================================================
-import unicodedata
-
-
-def _norm_key(s: str) -> str:
-    s = (s or "").strip().casefold()
-    s = "".join(
-        ch for ch in unicodedata.normalize("NFKD", s)
-        if not unicodedata.combining(ch)
-    )
-    s = re.sub(r"\s+", " ", s)
-    return s
-
-
-def _variantes_grau(grau: str) -> list[str]:
-    g = (grau or "").strip()
-    if not g:
-        return [g]
-    # cobre divergências comuns (moderada/moderado; severa/severo)
-    trocas = {
-        "Moderada": ["Moderado"],
-        "Moderado": ["Moderada"],
-        "Severa": ["Severo", "Grave"],
-        "Severo": ["Severa", "Grave"],
-        "Grave": ["Severa", "Severo"],
-    }
-    return [g] + trocas.get(g, [])
-
-
-def obter_entry_frase(db: dict, chave: str):
-    """Obtém a entry do banco tentando (1) exato, (2) normalizado e (3) variações de grau."""
-    if not isinstance(db, dict):
-        return None
-    chave = (chave or "").strip()
-    if not chave:
-        return None
-
-    # 1) match exato
-    if chave in db:
-        return db.get(chave)
-
-    # 2) variação de grau (Moderado/Moderada etc)
-    base, grau = _split_pat_grau(chave)
-    for g in _variantes_grau(grau):
-        alt = f"{base} ({g})" if g else base
-        if alt in db:
-            return db.get(alt)
-
-    # 3) match normalizado (acentos/caixa/espaços)
-    alvo = _norm_key(chave)
-    for k in db.keys():
-        if _norm_key(k) == alvo:
-            return db.get(k)
-
-    # 4) normalizado com variações de grau
-    for g in _variantes_grau(grau):
-        alt = f"{base} ({g})" if g else base
-        alvo2 = _norm_key(alt)
-        for k in db.keys():
-            if _norm_key(k) == alvo2:
-                return db.get(k)
-
-    return None
-
-
-def aplicar_entry_salva(entry: dict, *, layout: str = "detalhado"):
-    """Aplica uma entry do banco na tela (session_state) respeitando o layout salvo."""
-    if not isinstance(entry, dict):
-        return
-
-    entry = garantir_schema_det_frase(entry)
-    entry = migrar_txt_para_det(entry)
-    layout = (layout or entry.get("layout") or "detalhado").strip().lower()
-
-    if layout == "enxuto":
-        # limpa subcampos detalhados
-        for sec, itens in QUALI_DET.items():
-            for it in itens:
-                st.session_state[f"q_{sec}_{it}"] = ""
-
-        # aplica textos corridos
-        for k in ["valvas", "camaras", "funcao", "pericardio", "vasos", "ad_vd", "conclusao"]:
-            st.session_state[f"txt_{k}"] = (entry.get(k, "") or "").strip()
-        return
-
-    # ===== detalhado =====
-    det = entry.get("det", {}) if isinstance(entry.get("det"), dict) else {}
-
-    # limpa tudo primeiro (evita "sobras" de outra patologia)
-    for sec, itens in QUALI_DET.items():
-        for it in itens:
-            st.session_state[f"q_{sec}_{it}"] = ""
-
-    # aplica (mesmo vazio, para refletir exatamente o que foi salvo)
-    for sec, itens in QUALI_DET.items():
-        bloco = det.get(sec, {}) if isinstance(det.get(sec), dict) else {}
-        for it in itens:
-            st.session_state[f"q_{sec}_{it}"] = (bloco.get(it, "") or "").strip()
-
-    # conclusão
-    st.session_state["txt_conclusao"] = (entry.get("conclusao", "") or "").strip()
-
-    # mantém txt_* coerente (útil para PDF)
-    txts = det_para_txt(det)
-    for sec in ["valvas", "camaras", "funcao", "pericardio", "vasos"]:
-        st.session_state[f"txt_{sec}"] = (txts.get(sec, "") or "").strip()
-
 if menu_principal == "🩺 Laudos e Exames":
     chave = montar_chave_frase(sb_patologia, sb_grau_refluxo, sb_grau_geral)
     if st.sidebar.button("🔄 Gerar Texto"):
@@ -1389,7 +695,7 @@ if menu_principal == "🩺 Laudos e Exames":
         if entry:
             aplicar_entry_salva(entry, layout=entry.get("layout", "detalhado"))
         else:
-        # ✅ Se não existe no banco, segue o fluxo “automático” (como antes)
+            # ✅ Se não existe no banco, segue o fluxo “automático” (como antes)
             analisar_criterios_clinicos(
                 st.session_state.get('dados_atuais',{}),
                 st.session_state.get('peso_atual',10.0),
@@ -1400,7 +706,7 @@ if menu_principal == "🩺 Laudos e Exames":
             )
 
         if (not entry) and (sb_patologia == "Endocardiose Mitral"):
-            complementar_regurgitacao_valvar("mitral", sb_grau_refluxo)
+            complementar_regurgitacoes_nas_valvas(sb_patologia, sb_grau_refluxo)
 
 def aplicar_sugestao_nos_subcampos(patologia: str):
     """
@@ -1440,44 +746,6 @@ def aplicar_sugestao_nos_subcampos(patologia: str):
 
     # Vasos
     set_if_empty("q_vasos_aorta", txt_vasos)
-
-
-def complementar_regurgitacoes_nas_valvas(patologia: str = "", grau_mitral: str | None = None):
-    """
-    Complementa os campos qualitativos de valvas (q_valvas_*) com informação de regurgitação
-    quando houver Vmax > 0 nas medidas.
-    """
-    dados = st.session_state.get("dados_atuais", {}) or {}
-
-    mr = float(dados.get("MR_Vmax", 0.0) or 0.0)
-    tr = float(dados.get("TR_Vmax", 0.0) or 0.0)
-    ar = float(dados.get("AR_Vmax", 0.0) or 0.0)
-    pr = float(dados.get("PR_Vmax", 0.0) or 0.0)
-
-    def append_if_needed(key: str, extra: str):
-        extra = (extra or "").strip()
-        if not extra:
-            return
-        atual = (st.session_state.get(key, "") or "").strip()
-        if extra.lower() in atual.lower():
-            return
-        st.session_state[key] = (atual + ("\n" if atual else "") + extra).strip()
-
-    if mr > 0:
-        if patologia == "Endocardiose Mitral" and grau_mitral:
-            extra = f"Refluxo mitral {grau_mitral.lower()} ao Doppler (Vmax {mr:.2f} m/s)."
-        else:
-            extra = f"Refluxo mitral presente ao Doppler (Vmax {mr:.2f} m/s)."
-        append_if_needed("q_valvas_mitral", extra)
-
-    if tr > 0:
-        append_if_needed("q_valvas_tricuspide", f"Refluxo tricúspide presente ao Doppler (Vmax {tr:.2f} m/s).")
-
-    if ar > 0:
-        append_if_needed("q_valvas_aortica", f"Refluxo aórtico presente ao Doppler (Vmax {ar:.2f} m/s).")
-
-    if pr > 0:
-        append_if_needed("q_valvas_pulmonar", f"Refluxo pulmonar presente ao Doppler (Vmax {pr:.2f} m/s).")
 
 
 if menu_principal == "🩺 Laudos e Exames":
@@ -1970,36 +1238,7 @@ for label, module_path, function_name, special in MENU_ITEMS:
     if special == "laudos":
         from app.laudos_deps import build_laudos_deps
         from app.pages.laudos import render_laudos
-        laudos_deps = build_laudos_deps(
-            PASTA_LAUDOS=PASTA_LAUDOS,
-            ARQUIVO_REF=ARQUIVO_REF,
-            ARQUIVO_REF_FELINOS=ARQUIVO_REF_FELINOS,
-            PARAMS=PARAMS,
-            get_grupos_por_especie=get_grupos_por_especie,
-            normalizar_especie_label=normalizar_especie_label,
-            montar_nome_base_arquivo=montar_nome_base_arquivo,
-            calcular_referencia_tabela=calcular_referencia_tabela,
-            interpretar=interpretar,
-            interpretar_divedn=interpretar_divedn,
-            DIVEDN_REF_TXT=DIVEDN_REF_TXT,
-            listar_registros_arquivados_cached=listar_registros_arquivados_cached,
-            salvar_laudo_no_banco=salvar_laudo_no_banco,
-            obter_imagens_para_pdf=obter_imagens_para_pdf,
-            montar_qualitativa=montar_qualitativa,
-            _caminho_marca_dagua=_caminho_marca_dagua,
-            montar_chave_frase=montar_chave_frase,
-            carregar_frases=carregar_frases,
-            gerar_tabela_padrao=gerar_tabela_padrao,
-            gerar_tabela_padrao_felinos=gerar_tabela_padrao_felinos,
-            limpar_e_converter_tabela=limpar_e_converter_tabela,
-            limpar_e_converter_tabela_felinos=limpar_e_converter_tabela_felinos,
-            carregar_tabela_referencia_cached=carregar_tabela_referencia_cached,
-            carregar_tabela_referencia_felinos_cached=carregar_tabela_referencia_felinos_cached,
-            _normalizar_data_str=_normalizar_data_str,
-            especie_is_felina=especie_is_felina,
-            calcular_valor_final=calcular_valor_final,
-            gerar_numero_os=gerar_numero_os,
-        )
+        laudos_deps = build_laudos_deps()
         try:
             render_laudos(laudos_deps)
         except TypeError:

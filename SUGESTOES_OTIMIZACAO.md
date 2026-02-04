@@ -16,25 +16,21 @@ Havia **funções definidas duas vezes** no mesmo arquivo (a segunda definição
 
 **Ação:** O bloco duplicado (linhas 4102–5381) foi removido; restou uma única definição de cada função.
 
-### 1.2 Fase B — Mover lógica de Laudos para `app/` (parcialmente feito)
+### 1.2 Fase B — Mover lógica de Laudos para `app/` ✅ Feito
 
-O `fortcordis_app.py` ainda tem **dezenas de funções e constantes** só para Laudos (PARAMS, referências, PDF, tabelas caninos/felinos, interpretar, analisar_criterios_clinicos, etc.). Objetivo: deixar o app principal só com entrada, auth, menu e chamadas `render_*()`.
+A lógica de Laudos foi movida para `app/` e o `fortcordis_app.py` foi reduzido.
 
-**Sugestão de divisão em `app/`:**
+**Divisão em `app/`:**
 
-| Módulo | Conteúdo sugerido |
-|--------|--------------------|
-| **`app/laudos_refs.py`** ✅ | PARAMS, GRUPOS_CANINO/FELINO, tabelas de referência (caninos/felinos), `gerar_tabela_padrao`, `carregar_tabela_referencia_cached`, `limpar_e_converter_tabela`, `calcular_referencia_tabela`, `interpretar`, `interpretar_divedn`, `DIVEDN_REF_TXT`, `especie_is_felina`, `get_grupos_por_especie`, `normalizar_especie_label` — **já criado**; o app importa daqui e repassa via `laudos_deps`. |
-| **`app/laudos_pdf.py`** | Classe `PDF`, `obter_imagens_para_pdf`, `_caminho_marca_dagua`, funções de nome de arquivo e data (`montar_nome_base_arquivo`, `_normalizar_data_str`, `_limpar_texto_filename`, etc.) |
-| **`app/laudos_qualitativa.py`** (ou dentro de `laudos_helpers.py`) | `montar_qualitativa`, `montar_chave_frase`, `carregar_frases`, `frase_det`, `aplicar_frase_det_na_tela`, `obter_entry_frase`, `aplicar_entry_salva`, `analisar_criterios_clinicos`, complementos de regurgitação, etc. |
-| **`app/laudos_banco.py`** (ou ampliar `laudos_helpers.py`) | `_criar_tabelas_laudos_se_nao_existirem`, `salvar_laudo_no_banco`, `buscar_laudos`, `carregar_laudo_para_edicao`, `atualizar_laudo_editado`, `listar_registros_arquivados_cached`, `listar_laudos_do_banco`, `contar_laudos_do_banco`, etc. |
+| Módulo | Conteúdo |
+|--------|----------|
+| **`app/laudos_refs.py`** ✅ | PARAMS, GRUPOS_CANINO/FELINO, tabelas de referência, `calcular_referencia_tabela`, `interpretar`, `interpretar_divedn`, `listar_registros_arquivados_cached`, `especie_is_felina`, etc. |
+| **`app/laudos_pdf.py`** ✅ | `_caminho_marca_dagua`, `obter_imagens_para_pdf`, `montar_nome_base_arquivo`, `_normalizar_data_str`, etc. |
+| **`app/laudos_helpers.py`** ✅ | `montar_qualitativa`, `montar_chave_frase`, `carregar_frases`, `frase_det`, `aplicar_frase_det_na_tela`, `obter_entry_frase`, `aplicar_entry_salva`, `analisar_criterios_clinicos`, `complementar_regurgitacoes_nas_valvas`, `_split_pat_grau`, etc. |
+| **`app/laudos_banco.py`** ✅ | `_criar_tabelas_laudos_se_nao_existirem`, `salvar_laudo_no_banco`, `buscar_laudos`, `carregar_laudo_para_edicao`, `atualizar_laudo_editado`, etc. |
+| **`app/laudos_deps.py`** ✅ | `build_laudos_deps()` **importa** de todos os módulos acima e monta o `SimpleNamespace`. O app chama `build_laudos_deps()` sem argumentos. |
 
-Depois de mover:
-
-- Em **`app/laudos_deps.py`**, o `build_laudos_deps` passa a **importar** essas funções/constantes dos novos módulos e montar o `SimpleNamespace`. O `fortcordis_app.py` só chama `build_laudos_deps()` (podendo passar só `DB_PATH`, `PASTA_LAUDOS`, etc., se ainda estiverem no config).
-- Atualizar **`LAUDOS_DEPS_KEYS`** em `laudos_deps.py` para refletir o contrato atual.
-
-**Benefício:** `fortcordis_app.py` cai para algumas centenas de linhas; alterações em laudos ficam concentradas em `app/laudos_*.py`.
+**Benefício:** `fortcordis_app.py` ficou menor; alterações em laudos ficam em `app/laudos_*.py`.
 
 ---
 

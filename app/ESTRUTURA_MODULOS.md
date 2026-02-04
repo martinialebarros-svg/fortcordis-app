@@ -11,7 +11,9 @@ app/
   utils.py            # nome_proprio_ptbr, _norm_key, _clean_spaces (uso em db e laudos)
   db.py               # _db_conn_safe, _db_conn, _db_init, db_upsert_clinica/tutor/paciente/consultas
   laudos_helpers.py  # QUALI_DET, frases, listar/obter laudos do banco, schema det
-  laudos_refs.py    # PARAMS, GRUPOS, tabelas referência caninos/felinos, interpretar (Fase B)
+  laudos_refs.py    # PARAMS, GRUPOS, tabelas referência caninos/felinos, interpretar, listar_registros_arquivados_cached (Fase B)
+  laudos_banco.py   # _criar_tabelas_laudos_se_nao_existirem, salvar_laudo_no_banco, buscar_laudos, carregar_laudo_para_edicao, atualizar_laudo_editado (Fase B)
+  laudos_pdf.py     # marca d'água, obter_imagens_para_pdf, _normalizar_data_str, montar_nome_base_arquivo (Fase B)
   laudos_deps.py    # build_laudos_deps(**kwargs), LAUDOS_DEPS_KEYS — contrato da página Laudos (Fase B)
   menu.py             # MENU_ITEMS, get_menu_labels() — registro central do menu (Fase A otimização)
   services/           # Camada de serviços reutilizáveis (Fase C)

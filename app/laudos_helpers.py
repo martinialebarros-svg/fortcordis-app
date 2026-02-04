@@ -2,12 +2,16 @@
 import json
 import copy
 import os
+import re
 import sqlite3
+import unicodedata
 from pathlib import Path
 
 import streamlit as st
 
 from app.config import DB_PATH
+from app.utils import _norm_key
+from app.laudos_refs import calcular_referencia_tabela
 
 # Constantes para editor de frases
 QUALI_DET = {
@@ -198,6 +202,211 @@ def inferir_layout(entry: dict, chave: str) -> str:
     if txt_tem_algo and not det_tem_algo:
         return "enxuto"
     return "detalhado"
+
+
+def _split_pat_grau(chave: str):
+    """Quebra 'Patologia (Grau)' em (base, grau)."""
+    s = (chave or "").strip()
+    if s.endswith(")") and " (" in s:
+        base, resto = s.rsplit(" (", 1)
+        grau = resto[:-1].strip()
+        return base.strip(), grau
+    return s, ""
+
+
+def _variantes_grau(grau: str) -> list:
+    """Variações de grau para match robusto (Moderado/Moderada, etc.)."""
+    g = (grau or "").strip()
+    if not g:
+        return [g]
+    trocas = {
+        "Moderada": ["Moderado"],
+        "Moderado": ["Moderada"],
+        "Severa": ["Severo", "Grave"],
+        "Severo": ["Severa", "Grave"],
+        "Grave": ["Severa", "Severo"],
+    }
+    return [g] + trocas.get(g, [])
+
+
+def montar_chave_frase(patologia: str, grau_refluxo: str, grau_geral: str) -> str:
+    if patologia == "Normal":
+        return "Normal (Normal)"
+    if patologia == "Endocardiose Mitral":
+        return f"{patologia} ({grau_refluxo})"
+    return f"{patologia} ({grau_geral})"
+
+
+def obter_entry_frase(db: dict, chave: str):
+    """Obtém a entry do banco tentando (1) exato, (2) normalizado e (3) variações de grau."""
+    if not isinstance(db, dict):
+        return None
+    chave = (chave or "").strip()
+    if not chave:
+        return None
+    if chave in db:
+        return db.get(chave)
+    base, grau = _split_pat_grau(chave)
+    for g in _variantes_grau(grau):
+        alt = f"{base} ({g})" if g else base
+        if alt in db:
+            return db.get(alt)
+    alvo = _norm_key(chave)
+    for k in db.keys():
+        if _norm_key(k) == alvo:
+            return db.get(k)
+    for g in _variantes_grau(grau):
+        alt = f"{base} ({g})" if g else base
+        alvo2 = _norm_key(alt)
+        for k in db.keys():
+            if _norm_key(k) == alvo2:
+                return db.get(k)
+    return None
+
+
+def aplicar_entry_salva(entry: dict, *, layout: str = "detalhado"):
+    """Aplica uma entry do banco na tela (session_state) respeitando o layout salvo."""
+    if not isinstance(entry, dict):
+        return
+    entry = garantir_schema_det_frase(entry)
+    entry = migrar_txt_para_det(entry)
+    layout = (layout or entry.get("layout") or "detalhado").strip().lower()
+    if layout == "enxuto":
+        for sec, itens in QUALI_DET.items():
+            for it in itens:
+                st.session_state[f"q_{sec}_{it}"] = ""
+        for k in ["valvas", "camaras", "funcao", "pericardio", "vasos", "ad_vd", "conclusao"]:
+            st.session_state[f"txt_{k}"] = (entry.get(k, "") or "").strip()
+        return
+    det = entry.get("det", {}) if isinstance(entry.get("det"), dict) else {}
+    for sec, itens in QUALI_DET.items():
+        for it in itens:
+            st.session_state[f"q_{sec}_{it}"] = ""
+    for sec, itens in QUALI_DET.items():
+        bloco = det.get(sec, {}) if isinstance(det.get(sec), dict) else {}
+        for it in itens:
+            st.session_state[f"q_{sec}_{it}"] = (bloco.get(it, "") or "").strip()
+    st.session_state["txt_conclusao"] = (entry.get("conclusao", "") or "").strip()
+    txts = det_para_txt(det)
+    for sec in ["valvas", "camaras", "funcao", "pericardio", "vasos"]:
+        st.session_state[f"txt_{sec}"] = (txts.get(sec, "") or "").strip()
+
+
+def complementar_regurgitacoes_nas_valvas(patologia: str = "", grau_mitral: str | None = None):
+    """Complementa q_valvas_* com informação de regurgitação quando Vmax > 0 nas medidas."""
+    dados = st.session_state.get("dados_atuais", {}) or {}
+    mr = float(dados.get("MR_Vmax", 0.0) or 0.0)
+    tr = float(dados.get("TR_Vmax", 0.0) or 0.0)
+    ar = float(dados.get("AR_Vmax", 0.0) or 0.0)
+    pr = float(dados.get("PR_Vmax", 0.0) or 0.0)
+
+    def append_if_needed(key: str, extra: str):
+        extra = (extra or "").strip()
+        if not extra:
+            return
+        atual = (st.session_state.get(key, "") or "").strip()
+        if extra.lower() in atual.lower():
+            return
+        st.session_state[key] = (atual + ("\n" if atual else "") + extra).strip()
+
+    if mr > 0:
+        if patologia == "Endocardiose Mitral" and grau_mitral:
+            extra = f"Refluxo mitral {grau_mitral.lower()} ao Doppler (Vmax {mr:.2f} m/s)."
+        else:
+            extra = f"Refluxo mitral presente ao Doppler (Vmax {mr:.2f} m/s)."
+        append_if_needed("q_valvas_mitral", extra)
+    if tr > 0:
+        append_if_needed("q_valvas_tricuspide", f"Refluxo tricúspide presente ao Doppler (Vmax {tr:.2f} m/s).")
+    if ar > 0:
+        append_if_needed("q_valvas_aortica", f"Refluxo aórtico presente ao Doppler (Vmax {ar:.2f} m/s).")
+    if pr > 0:
+        append_if_needed("q_valvas_pulmonar", f"Refluxo pulmonar presente ao Doppler (Vmax {pr:.2f} m/s).")
+
+
+def analisar_criterios_clinicos(dados, peso, patologia, grau_refluxo, tem_congestao, grau_geral):
+    """Gera texto qualitativo automático a partir de patologia/grau e medidas; preenche session_state."""
+    chave = montar_chave_frase(patologia, grau_refluxo, grau_geral)
+    db_frases = st.session_state.get("db_frases") or {}
+    res_base = db_frases.get(chave, {})
+    if not res_base and patologia != "Normal":
+        for k, v in db_frases.items():
+            if patologia in k:
+                res_base = v.copy()
+                break
+    if not res_base:
+        res_base = {"conclusao": f"{patologia}"}
+    txt = res_base.copy()
+
+    if patologia == "Endocardiose Mitral":
+        conclusao_editor = (txt.get("conclusao") or "").strip()
+        try:
+            r_lvidd = calcular_referencia_tabela("LVIDd", peso)[0]
+            l_lvidd = r_lvidd[1] if r_lvidd[1] else 999
+            r_laao = calcular_referencia_tabela("LA_Ao", peso)[0]
+            l_laao = r_laao[1] if r_laao[1] else 1.6
+        except Exception:
+            l_lvidd, l_laao = 999, 1.6
+        val_laao, val_lvidd = dados.get("LA_Ao", 0), dados.get("LVIDd", 0)
+        aum_ae, aum_ve = (val_laao >= l_laao), (val_lvidd > l_lvidd)
+        if not (txt.get("valvas") or "").strip():
+            txt["valvas"] = f"Valva mitral espessada. Insuficiência {grau_refluxo.lower()}."
+        if not conclusao_editor:
+            if tem_congestao:
+                txt["conclusao"] = f"Endocardiose Mitral Estágio C (ACVIM). Refluxo {grau_refluxo}. Sinais de ICC."
+            elif aum_ae and aum_ve:
+                txt["conclusao"] = f"Endocardiose Mitral Estágio B2 (ACVIM). Refluxo {grau_refluxo} com remodelamento."
+            elif aum_ae:
+                txt["conclusao"] = f"Endocardiose Mitral (Refluxo {grau_refluxo}) com aumento atrial esquerdo."
+            else:
+                txt["conclusao"] = f"Endocardiose Mitral Estágio B1 (ACVIM). Refluxo {grau_refluxo}."
+
+    dados_atual = st.session_state.get("dados_atuais", {}) or {}
+    mr = float(dados_atual.get("MR_Vmax", 0.0) or 0.0)
+    tr = float(dados_atual.get("TR_Vmax", 0.0) or 0.0)
+    ar = float(dados_atual.get("AR_Vmax", 0.0) or 0.0)
+    pr = float(dados_atual.get("PR_Vmax", 0.0) or 0.0)
+
+    def append_if_needed(key: str, extra: str):
+        extra = (extra or "").strip()
+        if not extra:
+            return
+        atual = (st.session_state.get(key, "") or "").strip()
+        if extra.lower() in atual.lower():
+            return
+        st.session_state[key] = (atual + ("\n" if atual else "") + extra).strip()
+
+    if mr > 0:
+        append_if_needed("q_valvas_mitral", f"Refluxo mitral presente ao Doppler (Vmax {mr:.2f} m/s).")
+    if mr > 0 and patologia == "Endocardiose Mitral" and grau_refluxo:
+        append_if_needed("q_valvas_mitral", f"Refluxo mitral {grau_refluxo.lower()} ao Doppler (Vmax {mr:.2f} m/s).")
+    if tr > 0:
+        append_if_needed("q_valvas_tricuspide", f"Refluxo tricúspide presente ao Doppler (Vmax {tr:.2f} m/s).")
+    if ar > 0:
+        append_if_needed("q_valvas_aortica", f"Refluxo aórtico presente ao Doppler (Vmax {ar:.2f} m/s).")
+    if pr > 0:
+        append_if_needed("q_valvas_pulmonar", f"Refluxo pulmonar presente ao Doppler (Vmax {pr:.2f} m/s).")
+
+    def set_if_empty(key, value):
+        value = (value or "").strip()
+        if not value:
+            return
+        if not (st.session_state.get(key, "") or "").strip():
+            st.session_state[key] = value
+
+    txt_valvas = st.session_state.get("txt_valvas", "")
+    txt_camaras = st.session_state.get("txt_camaras", "")
+    txt_funcao = st.session_state.get("txt_funcao", "")
+    txt_pericardio = st.session_state.get("txt_pericardio", "")
+    txt_vasos = st.session_state.get("txt_vasos", "")
+    txt_ad_vd = st.session_state.get("txt_ad_vd", "")
+    set_if_empty("q_valvas_mitral", txt_valvas)
+    set_if_empty("q_camaras_ae", txt_camaras)
+    set_if_empty("q_camaras_ve", txt_camaras)
+    set_if_empty("q_camaras_ad", txt_ad_vd)
+    set_if_empty("q_camaras_vd", txt_ad_vd)
+    set_if_empty("q_funcao_sistolica_ve", txt_funcao)
+    set_if_empty("q_pericardio_efusao", txt_pericardio)
+    set_if_empty("q_vasos_aorta", txt_vasos)
 
 
 def montar_qualitativa():
