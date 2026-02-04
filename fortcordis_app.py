@@ -411,6 +411,12 @@ from app.laudos_helpers import (
     contar_laudos_arquivos_do_banco,
 )
 
+
+def carregar_frases():
+    """Wrapper sem argumentos para uso no app e em laudos_deps; usa ARQUIVO_FRASES e dict vazio como default."""
+    return _carregar_frases_impl(ARQUIVO_FRASES, {})
+
+
 # ============================================================================
 # SISTEMA DE AUTENTICAÇÃO E PERMISSÕES
 # ============================================================================
