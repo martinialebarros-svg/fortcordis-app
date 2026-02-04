@@ -541,10 +541,15 @@ def calcular_valor_final(servico_id, clinica_id):
     return (valor_base, desconto_aplicado, max(valor_final, 0.0))
 
 def registrar_cobranca_automatica(agendamento_id, clinica_id, servicos_ids):
-    """Registra cobrança automaticamente após conclusão do atendimento"""
+    """Registra cobrança automaticamente após conclusão do atendimento. data_competencia = data do agendamento."""
     conn = get_conn()
     cursor = conn.cursor()
-    
+    data_competencia = datetime.now().strftime("%Y-%m-%d")
+    agend = buscar_agendamento_por_id(agendamento_id)
+    if agend:
+        data_atend = agend.get("data") or agend.get("data_agendamento")
+        if data_atend:
+            data_competencia = str(data_atend)[:10]
     valor_bruto = 0.0
     valor_final = 0.0
     valor_desconto_total = 0.0
@@ -563,7 +568,6 @@ def registrar_cobranca_automatica(agendamento_id, clinica_id, servicos_ids):
     
     descricao = "Serviços: " + ", ".join(descricao_servicos)
     numero_os = gerar_numero_os()
-    data_competencia = datetime.now().strftime("%Y-%m-%d")
     
     cursor.execute("""
         INSERT INTO financeiro (
@@ -861,7 +865,7 @@ def buscar_agendamento_por_id(agendamento_id):
     conn.close()
     d = dict(zip(real_cols, row))
     if "data" not in d and "data_agendamento" in d:
-        d["data"] = d["data"]
+        d["data"] = d["data_agendamento"]
     elif "data_agendamento" not in d and "data" in d:
         d["data_agendamento"] = d["data"]
     return d
@@ -924,7 +928,8 @@ def criar_os_ao_marcar_realizado(agendamento_id):
         row_preco = cursor.fetchone()
         valor_final = float(row_preco[0]) if row_preco else valor_base_fallback
         numero_os = gerar_numero_os()
-        data_comp = datetime.now().strftime("%Y-%m-%d")
+        data_atend = agend.get("data") or agend.get("data_agendamento")
+        data_comp = str(data_atend)[:10] if data_atend else datetime.now().strftime("%Y-%m-%d")
         descricao = f"{servico_texto} - {agend.get('paciente', '')}"
         cursor.execute("""
             INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)

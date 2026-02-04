@@ -19,6 +19,25 @@ from fortcordis_modules.integrations import (
 )
 
 
+def _cadastrar_clinica_rapido_agendamentos(nome, endereco=None, telefone=None):
+    """Cadastra nova clínica em clinicas_parceiras (mesma tabela de Cadastros). Retorna (clinica_id, None) ou (None, msg_erro)."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO clinicas_parceiras (nome, endereco, telefone, cidade)
+            VALUES (?, ?, ?, 'Fortaleza')
+        """, (nome or "", endereco or "", telefone or ""))
+        clinica_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return clinica_id, None
+    except sqlite3.IntegrityError:
+        return None, "Clínica com este nome já existe."
+    except Exception as e:
+        return None, str(e)
+
+
 def render_agendamentos():
     st.title("📅 Gestão de Agendamentos")
 
@@ -55,16 +74,34 @@ def render_agendamentos():
                     cursor_temp.execute("SELECT nome FROM clinicas_parceiras ORDER BY nome")
                 lista_clinicas = [row[0] for row in cursor_temp.fetchall()]
                 conn_temp.close()
-                if not lista_clinicas:
-                    lista_clinicas = []
-                lista_clinicas.append("📝 Digitar manualmente")
+                # Opção "Cadastrar nova clínica" no topo; "Digitar manualmente" no final (igual Laudos)
+                opcoes_clinica = ["➕ Cadastrar Nova Clínica"] + (lista_clinicas or []) + ["📝 Digitar manualmente"]
                 clinica_agend_sel = st.selectbox(
                     "Clínica",
-                    options=lista_clinicas,
+                    options=opcoes_clinica,
                     key="novo_agend_clinica_sel",
-                    help="Clínicas cadastradas em Cadastros > Clínicas Parceiras"
+                    help="Clínicas cadastradas em Cadastros > Clínicas Parceiras. Use a primeira opção para cadastrar uma nova."
                 )
-                if clinica_agend_sel == "📝 Digitar manualmente":
+                if clinica_agend_sel == "➕ Cadastrar Nova Clínica":
+                    st.info("💡 Cadastrando nova clínica no sistema...")
+                    with st.expander("📝 Dados da Nova Clínica", expanded=True):
+                        nova_clinica_nome = st.text_input("Nome da Clínica *", key="nova_clinica_nome_agend")
+                        nova_clinica_end = st.text_input("Endereço", key="nova_clinica_end_agend")
+                        nova_clinica_tel = st.text_input("Telefone", key="nova_clinica_tel_agend")
+                        if st.button("✅ Cadastrar Clínica", key="btn_cadastrar_clinica_agend", type="primary"):
+                            if nova_clinica_nome:
+                                clinica_id, msg = _cadastrar_clinica_rapido_agendamentos(
+                                    nova_clinica_nome, nova_clinica_end, nova_clinica_tel
+                                )
+                                if clinica_id:
+                                    st.success(f"✅ Clínica '{nova_clinica_nome}' cadastrada!")
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {msg}")
+                            else:
+                                st.error("Nome da clínica é obrigatório.")
+                    clinica_agend = None
+                elif clinica_agend_sel == "📝 Digitar manualmente":
                     clinica_agend = st.text_input("Digite o nome da clínica", key="novo_agend_clinica_manual")
                 else:
                     clinica_agend = clinica_agend_sel
@@ -78,6 +115,8 @@ def render_agendamentos():
         if st.button("✅ Criar Agendamento", type="primary", use_container_width=True):
             if not paciente_agend:
                 st.error("O nome do paciente é obrigatório!")
+            elif clinica_agend is None or (isinstance(clinica_agend, str) and not clinica_agend.strip()):
+                st.error("Selecione uma clínica ou cadastre uma nova antes de criar o agendamento.")
             else:
                 try:
                     agend_id = criar_agendamento(
