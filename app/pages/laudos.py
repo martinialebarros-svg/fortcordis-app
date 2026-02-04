@@ -1372,7 +1372,7 @@ def render_laudos(deps=None):
                 "fc": fc
             },
             "medidas": dados,
-            "textos": {k: st.session_state[f"txt_{k}"] for k in ['valvas','camaras','funcao','pericardio','vasos','ad_vd','conclusao']},
+            "textos": {k: st.session_state.get(f"txt_{k}", "") for k in ['valvas','camaras','funcao','pericardio','vasos','ad_vd','conclusao']},
             # guarda também o layout e os subcampos detalhados (para recarregar e editar fielmente)
             "layout_qualitativa": st.session_state.get("layout_qualitativa", "detalhado"),
             "quali_det": {
