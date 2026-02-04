@@ -10,6 +10,7 @@ import streamlit as st
 
 from app.config import DB_PATH
 from app.db import _db_conn, _db_init
+from app.components import tabela_tabular
 from app.services import (
     listar_consultas_recentes,
     criar_consulta,
@@ -402,12 +403,12 @@ def render_prontuario():
             """, conn_list)
             
             if not tutores_df.empty:
-                tutores_df['Contato'] = tutores_df['Contato'].fillna('Não informado')
-                
-                st.dataframe(tutores_df.drop('id', axis=1), use_container_width=True, hide_index=True)
-                st.caption(f"Total: {len(tutores_df)} tutor(es)")
-            else:
-                st.info("Nenhum tutor cadastrado ainda")
+                tutores_df["Contato"] = tutores_df["Contato"].fillna("Não informado")
+            tabela_tabular(
+                tutores_df,
+                caption=f"Total: {len(tutores_df)} tutor(es)" if not tutores_df.empty else None,
+                empty_message="Nenhum tutor cadastrado ainda",
+            )
         
         except Exception as e:
             st.error(f"Erro ao carregar tutores: {e}")
@@ -604,12 +605,13 @@ def render_prontuario():
         try:
             pacientes_df = listar_pacientes_tabela()
             if not pacientes_df.empty:
-                pacientes_df['Raça'] = pacientes_df['Raça'].fillna('SRD')
-                pacientes_df['Contato'] = pacientes_df['Contato'].fillna('Não informado')
-                st.dataframe(pacientes_df.drop('id', axis=1), use_container_width=True, hide_index=True)
-                st.caption(f"Total: {len(pacientes_df)} paciente(s)")
-            else:
-                st.info("Nenhum paciente cadastrado ainda")
+                pacientes_df["Raça"] = pacientes_df["Raça"].fillna("SRD")
+                pacientes_df["Contato"] = pacientes_df["Contato"].fillna("Não informado")
+            tabela_tabular(
+                pacientes_df,
+                caption=f"Total: {len(pacientes_df)} paciente(s)" if not pacientes_df.empty else None,
+                empty_message="Nenhum paciente cadastrado ainda",
+            )
         except Exception as e:
             st.error(f"Erro ao carregar pacientes: {e}")
     
@@ -1029,14 +1031,11 @@ def render_prontuario():
                 if not consultas_df.empty:
                     consultas_df["Paciente"] = consultas_df["Paciente"].str.title()
                     consultas_df["Tutor"] = consultas_df["Tutor"].str.title()
-                    st.dataframe(
-                        consultas_df.drop("id", axis=1),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                    st.caption(f"Mostrando as {len(consultas_df)} consultas mais recentes")
-                else:
-                    st.info("📋 Nenhuma consulta registrada ainda")
+                tabela_tabular(
+                    consultas_df,
+                    caption=f"Mostrando as {len(consultas_df)} consultas mais recentes" if not consultas_df.empty else None,
+                    empty_message="📋 Nenhuma consulta registrada ainda",
+                )
             except Exception as e:
                 st.warning(f"⚠️ Erro ao carregar histórico: {e}")
 

@@ -17,6 +17,10 @@ app/
     __init__.py
     consultas.py      # listar_consultas_recentes, criar_consulta
     pacientes.py      # listar_pacientes_com_tutor, listar_pacientes_tabela, buscar_pacientes, atualizar_peso_paciente
+  components/         # Componentes de UI reutilizáveis (Fase D)
+    __init__.py
+    tabelas.py        # tabela_tabular(df, caption, drop_colunas, empty_message)
+    metricas.py       # metricas_linha(metricas)
   ESTRUTURA_MODULOS.md
   pages/
     __init__.py        # exporta render_dashboard, ..., render_cadastros, render_configuracoes

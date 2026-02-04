@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
+from app.components import metricas_linha
 from app.config import DB_PATH
 from fortcordis_modules.database import listar_agendamentos
 
@@ -13,50 +14,48 @@ def render_dashboard():
     st.title("📊 Dashboard - Fort Cordis")
     st.markdown("### Resumo do Sistema")
 
-    col1, col2, col3, col4 = st.columns(4)
     conn = sqlite3.connect(str(DB_PATH))
 
-    with col1:
-        hoje = datetime.now().strftime("%Y-%m-%d")
-        try:
-            agends_hoje = listar_agendamentos(data_inicio=hoje, data_fim=hoje)
-            total = len([a for a in agends_hoje if (a.get("status") or "") != "Cancelado"])
-        except Exception:
-            total = 0
-        st.metric("Agendamentos Hoje", total)
+    hoje = datetime.now().strftime("%Y-%m-%d")
+    try:
+        agends_hoje = listar_agendamentos(data_inicio=hoje, data_fim=hoje)
+        total_hoje = len([a for a in agends_hoje if (a.get("status") or "") != "Cancelado"])
+    except Exception:
+        total_hoje = 0
 
-    with col2:
-        amanha = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        try:
-            agends_amanha = listar_agendamentos(data_inicio=amanha, data_fim=amanha)
-            total = len([a for a in agends_amanha if (a.get("status") or "") in ("Agendado", "") or a.get("status") is None])
-        except Exception:
-            total = 0
-        st.metric("Pendentes Confirmação", total)
+    amanha = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    try:
+        agends_amanha = listar_agendamentos(data_inicio=amanha, data_fim=amanha)
+        total_amanha = len([a for a in agends_amanha if (a.get("status") or "") in ("Agendado", "") or a.get("status") is None])
+    except Exception:
+        total_amanha = 0
 
-    with col3:
-        try:
-            a_receber = pd.read_sql_query(
-                "SELECT SUM(valor_final) as total FROM financeiro WHERE status_pagamento = 'pendente'",
-                conn
-            )
-            valor = a_receber['total'].iloc[0] if not a_receber.empty and a_receber['total'].iloc[0] else 0
-        except Exception:
-            valor = 0
-        st.metric("Contas a Receber", f"R$ {valor:,.2f}")
+    try:
+        a_receber = pd.read_sql_query(
+            "SELECT SUM(valor_final) as total FROM financeiro WHERE status_pagamento = 'pendente'",
+            conn,
+        )
+        valor_receber = a_receber["total"].iloc[0] if not a_receber.empty and a_receber["total"].iloc[0] else 0
+    except Exception:
+        valor_receber = 0
 
-    with col4:
-        try:
-            atrasados = pd.read_sql_query(
-                "SELECT COUNT(*) as total FROM acompanhamentos WHERE status = 'atrasado'",
-                conn
-            )
-            total = atrasados['total'].iloc[0] if not atrasados.empty else 0
-        except Exception:
-            total = 0
-        st.metric("Retornos Atrasados", total)
+    try:
+        atrasados = pd.read_sql_query(
+            "SELECT COUNT(*) as total FROM acompanhamentos WHERE status = 'atrasado'",
+            conn,
+        )
+        total_atrasados = atrasados["total"].iloc[0] if not atrasados.empty else 0
+    except Exception:
+        total_atrasados = 0
 
     conn.close()
+
+    metricas_linha([
+        ("Agendamentos Hoje", total_hoje, None),
+        ("Pendentes Confirmação", total_amanha, None),
+        ("Contas a Receber", f"R$ {valor_receber:,.2f}", None),
+        ("Retornos Atrasados", total_atrasados, None),
+    ])
 
     st.markdown("---")
     st.success("✅ Sistema inicializado com sucesso!")

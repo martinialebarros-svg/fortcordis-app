@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from app.components import tabela_tabular
 from app.config import DB_PATH
 from modules.rbac import verificar_permissao
 
@@ -89,10 +90,12 @@ def render_cadastros():
                 ORDER BY nome
             """, conn)
             
+            tabela_tabular(
+                clinicas,
+                caption=f"Total: {len(clinicas)} clínica(s)" if not clinicas.empty else None,
+                empty_message="Nenhuma clínica cadastrada.",
+            )
             if not clinicas.empty:
-                st.dataframe(clinicas.drop('id', axis=1), use_container_width=True, hide_index=True)
-                st.caption(f"Total: {len(clinicas)} clínica(s)")
-                
                 # ========== EDITAR/EXCLUIR ==========
                 st.markdown("---")
                 st.markdown("### ✏️ Editar ou Excluir Clínica")

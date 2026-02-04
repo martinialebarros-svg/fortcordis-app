@@ -29,7 +29,7 @@ O **fortcordis_app.py** ainda concentra: sidebar do Laudos, todas as funções/c
 | **Nova tabela ou coluna** | `app/db.py` → `_db_init()` (CREATE TABLE IF NOT EXISTS ou ALTER TABLE com try/except) |
 | **Lógica de negócio compartilhada** (ex: “listar consultas por paciente”) | `app/services/` (ex: `app/services/consultas.py`) ou funções em `app/db.py` |
 | **Constantes globais** (paths, limites, textos padrão) | `app/config.py` |
-| **Componente de UI reutilizável** (ex: card de paciente, filtro por data) | `app/components/` (ex: `app/components/paciente_card.py`) — opcional |
+| **Componente de UI reutilizável** (tabela, métricas, card, filtro) | `app/components/` — ex.: `tabela_tabular`, `metricas_linha` em `app/components/tabelas.py` e `metricas.py` |
 | **Ajuste só em uma tela** | O arquivo correspondente em `app/pages/` |
 
 ### 2.2 Convenção para nova página
@@ -79,10 +79,15 @@ Assim, qualquer ambiente (local ou deploy) que rode o app terá o schema atualiz
 - **Prescrições** usa `buscar_pacientes` na aba "Buscar Paciente".
 - **Benefício:** reutilização, testes e mudanças de regra em um só lugar.
 
-### Fase D — Componentes de UI (quando houver repetição)
+### Fase D — Componentes de UI (quando houver repetição) ✅ Feito
 
-- Quando o mesmo bloco de UI (formulário, tabela, filtro) aparecer em várias páginas, extrair para `app/components/nome.py` e importar nas pages.
-- **Benefício:** mudar layout ou comportamento em um lugar só.
+- **`app/components/`** criado com:
+  - **tabelas.py:** `tabela_tabular(df, caption=None, drop_colunas="id", empty_message=None)` — exibe DataFrame com layout padrão (use_container_width, hide_index), opção de esconder colunas e mensagem quando vazio.
+  - **metricas.py:** `metricas_linha(metricas)` — exibe uma linha de `st.metric` (lista de (label, value, delta)).
+- **Prontuário** usa `tabela_tabular` para listas de tutores, pacientes e consultas recentes.
+- **Cadastros** usa `tabela_tabular` para a lista de clínicas parceiras.
+- **Dashboard** usa `metricas_linha` para as 4 métricas (Agendamentos Hoje, Pendentes Confirmação, Contas a Receber, Retornos Atrasados).
+- **Benefício:** alterar layout/comportamento das tabelas ou métricas em um único lugar.
 
 ---
 
