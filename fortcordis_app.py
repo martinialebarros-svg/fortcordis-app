@@ -403,6 +403,7 @@ from app.laudos_helpers import (
     aplicar_det_nos_subcampos,
     inferir_layout,
     carregar_frases as _carregar_frases_impl,
+    montar_qualitativa,
     _backfill_nomes_laudos,
     listar_laudos_do_banco,
     listar_laudos_arquivos_do_banco,
@@ -635,6 +636,37 @@ ARQUIVO_FRASES = str((Path.home() / "FortCordis" / "frases_personalizadas.json")
 Path(ARQUIVO_FRASES).parent.mkdir(parents=True, exist_ok=True)
 
 # Arquivos de referência e pasta Laudos vêm de app.config (PASTA_LAUDOS, ARQUIVO_REF, ARQUIVO_REF_FELINOS)
+
+
+def criar_imagem_esmaecida(input_path, output_path, opacidade=0.10):
+    """Gera versão esmaecida do logo para marca d'água."""
+    try:
+        img = Image.open(input_path).convert("RGBA")
+        dados = list(img.getdata())
+        novos_dados = []
+        for item in dados:
+            novo_alpha = int(item[3] * opacidade)
+            novos_dados.append((item[0], item[1], item[2], novo_alpha))
+        img.putdata(novos_dados)
+        img.save(output_path, "PNG")
+        return True
+    except Exception:
+        return False
+
+
+def _caminho_marca_dagua():
+    """Retorna caminho da marca d'água; cria na primeira geração (lazy) para não gastar no Cloud."""
+    if os.path.exists("logo.png") and not os.path.exists(MARCA_DAGUA_TEMP):
+        try:
+            criar_imagem_esmaecida("logo.png", MARCA_DAGUA_TEMP, opacidade=0.05)
+        except Exception:
+            pass
+    if os.path.exists(MARCA_DAGUA_TEMP):
+        return MARCA_DAGUA_TEMP
+    if os.path.exists("logo.png"):
+        return "logo.png"
+    return None
+
 
 # ==========================================================
 # 📷 Imagens do exame (carregadas do arquivo e/ou adicionadas manualmente)

@@ -200,6 +200,24 @@ def inferir_layout(entry: dict, chave: str) -> str:
     return "detalhado"
 
 
+def montar_qualitativa():
+    """Monta valvas/camaras/vasos/funcao/pericardio.
+    Se os subcampos (q_...) estiverem vazios, usa fallback nos txt_* (frases antigas).
+    """
+    saida = {}
+    for sec, itens in QUALI_DET.items():
+        linhas = []
+        for it in itens:
+            val = (st.session_state.get(f"q_{sec}_{it}", "") or "").strip()
+            if val:
+                linhas.append(f"- {ROTULOS[it]}: {val}")
+        bloco = "\n".join(linhas).strip()
+        if not bloco:
+            bloco = (st.session_state.get(f"txt_{sec}", "") or "").strip()
+        saida[sec] = bloco
+    return saida
+
+
 def carregar_frases(arquivo_frases: str, frases_default: dict):
     """Carrega frases do JSON; usa frases_default como base e merge do arquivo."""
     if not os.path.exists(arquivo_frases):
