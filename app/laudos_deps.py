@@ -28,12 +28,26 @@ from app.laudos_pdf import (
     _normalizar_data_str,
 )
 from app.laudos_banco import salvar_laudo_no_banco
-from app.laudos_helpers import (
-    montar_qualitativa,
-    montar_chave_frase,
-    carregar_frases as _carregar_frases_impl,
-    ARQUIVO_FRASES,
-)
+try:
+    from app.laudos_helpers import (
+        montar_qualitativa,
+        montar_chave_frase,
+        carregar_frases as _carregar_frases_impl,
+        ARQUIVO_FRASES,
+    )
+except ImportError:
+    from app.laudos_helpers import (
+        montar_qualitativa,
+        carregar_frases as _carregar_frases_impl,
+        ARQUIVO_FRASES,
+    )
+
+    def montar_chave_frase(patologia: str, grau_refluxo: str, grau_geral: str) -> str:
+        if patologia == "Normal":
+            return "Normal (Normal)"
+        if patologia == "Endocardiose Mitral":
+            return f"{patologia} ({grau_refluxo})"
+        return f"{patologia} ({grau_geral})"
 
 
 def _carregar_frases():

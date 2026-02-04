@@ -174,33 +174,195 @@ from fortcordis_modules.documentos import (
     calcular_posologia
 )
 
-from app.laudos_helpers import (
-    ARQUIVO_FRASES,
-    QUALI_DET,
-    ROTULOS,
-    garantir_schema_det_frase,
-    migrar_txt_para_det,
-    det_para_txt,
-    frase_det,
-    aplicar_frase_det_na_tela,
-    aplicar_det_nos_subcampos,
-    inferir_layout,
-    carregar_frases as _carregar_frases_impl,
-    montar_qualitativa,
-    _backfill_nomes_laudos,
-    listar_laudos_do_banco,
-    listar_laudos_arquivos_do_banco,
-    obter_laudo_arquivo_por_id,
-    obter_imagens_laudo_arquivo,
-    contar_laudos_do_banco,
-    contar_laudos_arquivos_do_banco,
-    montar_chave_frase,
-    obter_entry_frase,
-    aplicar_entry_salva,
-    analisar_criterios_clinicos,
-    complementar_regurgitacoes_nas_valvas,
-    _split_pat_grau,
-)
+try:
+    from app.laudos_helpers import (
+        ARQUIVO_FRASES,
+        QUALI_DET,
+        ROTULOS,
+        garantir_schema_det_frase,
+        migrar_txt_para_det,
+        det_para_txt,
+        frase_det,
+        aplicar_frase_det_na_tela,
+        aplicar_det_nos_subcampos,
+        inferir_layout,
+        carregar_frases as _carregar_frases_impl,
+        montar_qualitativa,
+        _backfill_nomes_laudos,
+        listar_laudos_do_banco,
+        listar_laudos_arquivos_do_banco,
+        obter_laudo_arquivo_por_id,
+        obter_imagens_laudo_arquivo,
+        contar_laudos_do_banco,
+        contar_laudos_arquivos_do_banco,
+        montar_chave_frase,
+        obter_entry_frase,
+        aplicar_entry_salva,
+        analisar_criterios_clinicos,
+        complementar_regurgitacoes_nas_valvas,
+        _split_pat_grau,
+    )
+except ImportError:
+    # Fallback: deploy com app/laudos_helpers.py antigo (sem funções qualitativas)
+    from app.laudos_helpers import (
+        ARQUIVO_FRASES,
+        QUALI_DET,
+        ROTULOS,
+        garantir_schema_det_frase,
+        migrar_txt_para_det,
+        det_para_txt,
+        frase_det,
+        aplicar_frase_det_na_tela,
+        aplicar_det_nos_subcampos,
+        inferir_layout,
+        carregar_frases as _carregar_frases_impl,
+        montar_qualitativa,
+        _backfill_nomes_laudos,
+        listar_laudos_do_banco,
+        listar_laudos_arquivos_do_banco,
+        obter_laudo_arquivo_por_id,
+        obter_imagens_laudo_arquivo,
+        contar_laudos_do_banco,
+        contar_laudos_arquivos_do_banco,
+    )
+
+    def _split_pat_grau(chave: str):
+        s = (chave or "").strip()
+        if s.endswith(")") and " (" in s:
+            base, resto = s.rsplit(" (", 1)
+            return base.strip(), resto[:-1].strip()
+        return s, ""
+
+    def montar_chave_frase(patologia: str, grau_refluxo: str, grau_geral: str) -> str:
+        if patologia == "Normal":
+            return "Normal (Normal)"
+        if patologia == "Endocardiose Mitral":
+            return f"{patologia} ({grau_refluxo})"
+        return f"{patologia} ({grau_geral})"
+
+    def obter_entry_frase(db: dict, chave: str):
+        if not isinstance(db, dict) or not (chave or "").strip():
+            return None
+        chave = (chave or "").strip()
+        if chave in db:
+            return db.get(chave)
+        base, grau = _split_pat_grau(chave)
+        for g in [grau, "Moderado", "Moderada", "Severo", "Severa", "Grave"]:
+            alt = f"{base} ({g})" if g else base
+            if alt in db:
+                return db.get(alt)
+        return None
+
+    def aplicar_entry_salva(entry: dict, *, layout: str = "detalhado"):
+        if not isinstance(entry, dict):
+            return
+        entry = garantir_schema_det_frase(entry)
+        entry = migrar_txt_para_det(entry)
+        layout = (layout or entry.get("layout") or "detalhado").strip().lower()
+        if layout == "enxuto":
+            for sec, itens in QUALI_DET.items():
+                for it in itens:
+                    st.session_state[f"q_{sec}_{it}"] = ""
+            for k in ["valvas", "camaras", "funcao", "pericardio", "vasos", "ad_vd", "conclusao"]:
+                st.session_state[f"txt_{k}"] = (entry.get(k, "") or "").strip()
+            return
+        det = entry.get("det", {}) if isinstance(entry.get("det"), dict) else {}
+        for sec, itens in QUALI_DET.items():
+            for it in itens:
+                st.session_state[f"q_{sec}_{it}"] = (det.get(sec, {}).get(it, "") or "").strip()
+        st.session_state["txt_conclusao"] = (entry.get("conclusao", "") or "").strip()
+        txts = det_para_txt(det)
+        for sec in ["valvas", "camaras", "funcao", "pericardio", "vasos"]:
+            st.session_state[f"txt_{sec}"] = (txts.get(sec, "") or "").strip()
+
+    def complementar_regurgitacoes_nas_valvas(patologia: str = "", grau_mitral: str | None = None):
+        dados = st.session_state.get("dados_atuais", {}) or {}
+        mr = float(dados.get("MR_Vmax", 0.0) or 0.0)
+        tr = float(dados.get("TR_Vmax", 0.0) or 0.0)
+        ar = float(dados.get("AR_Vmax", 0.0) or 0.0)
+        pr = float(dados.get("PR_Vmax", 0.0) or 0.0)
+
+        def append_if_needed(key: str, extra: str):
+            extra = (extra or "").strip()
+            if not extra:
+                return
+            atual = (st.session_state.get(key, "") or "").strip()
+            if extra.lower() not in atual.lower():
+                st.session_state[key] = (atual + ("\n" if atual else "") + extra).strip()
+
+        if mr > 0:
+            if patologia == "Endocardiose Mitral" and grau_mitral:
+                append_if_needed("q_valvas_mitral", f"Refluxo mitral {grau_mitral.lower()} ao Doppler (Vmax {mr:.2f} m/s).")
+            else:
+                append_if_needed("q_valvas_mitral", f"Refluxo mitral presente ao Doppler (Vmax {mr:.2f} m/s).")
+        if tr > 0:
+            append_if_needed("q_valvas_tricuspide", f"Refluxo tricúspide presente ao Doppler (Vmax {tr:.2f} m/s).")
+        if ar > 0:
+            append_if_needed("q_valvas_aortica", f"Refluxo aórtico presente ao Doppler (Vmax {ar:.2f} m/s).")
+        if pr > 0:
+            append_if_needed("q_valvas_pulmonar", f"Refluxo pulmonar presente ao Doppler (Vmax {pr:.2f} m/s).")
+
+    def analisar_criterios_clinicos(dados, peso, patologia, grau_refluxo, tem_congestao, grau_geral):
+        from app.laudos_refs import calcular_referencia_tabela
+        chave = montar_chave_frase(patologia, grau_refluxo, grau_geral)
+        db_frases = st.session_state.get("db_frases") or {}
+        res_base = db_frases.get(chave, {})
+        if not res_base and patologia != "Normal":
+            for k, v in db_frases.items():
+                if patologia in k:
+                    res_base = v.copy()
+                    break
+        if not res_base:
+            res_base = {"conclusao": f"{patologia}"}
+        txt = res_base.copy()
+        if patologia == "Endocardiose Mitral":
+            conclusao_editor = (txt.get("conclusao") or "").strip()
+            try:
+                r_lvidd = calcular_referencia_tabela("LVIDd", peso)[0]
+                l_lvidd = r_lvidd[1] if r_lvidd[1] else 999
+                r_laao = calcular_referencia_tabela("LA_Ao", peso)[0]
+                l_laao = r_laao[1] if r_laao[1] else 1.6
+            except Exception:
+                l_lvidd, l_laao = 999, 1.6
+            val_laao, val_lvidd = dados.get("LA_Ao", 0), dados.get("LVIDd", 0)
+            aum_ae, aum_ve = (val_laao >= l_laao), (val_lvidd > l_lvidd)
+            if not (txt.get("valvas") or "").strip():
+                txt["valvas"] = f"Valva mitral espessada. Insuficiência {grau_refluxo.lower()}."
+            if not conclusao_editor:
+                if tem_congestao:
+                    txt["conclusao"] = f"Endocardiose Mitral Estágio C (ACVIM). Refluxo {grau_refluxo}. Sinais de ICC."
+                elif aum_ae and aum_ve:
+                    txt["conclusao"] = f"Endocardiose Mitral Estágio B2 (ACVIM). Refluxo {grau_refluxo} com remodelamento."
+                elif aum_ae:
+                    txt["conclusao"] = f"Endocardiose Mitral (Refluxo {grau_refluxo}) com aumento atrial esquerdo."
+                else:
+                    txt["conclusao"] = f"Endocardiose Mitral Estágio B1 (ACVIM). Refluxo {grau_refluxo}."
+        dados_atual = st.session_state.get("dados_atuais", {}) or {}
+        for (key, vmax_key), label in [
+            (("q_valvas_mitral", "MR_Vmax"), "mitral"), (("q_valvas_tricuspide", "TR_Vmax"), "tricúspide"),
+            (("q_valvas_aortica", "AR_Vmax"), "aórtico"), (("q_valvas_pulmonar", "PR_Vmax"), "pulmonar"),
+        ]:
+            v = float(dados_atual.get(vmax_key, 0) or 0)
+            if v > 0:
+                extra = f"Refluxo {label} presente ao Doppler (Vmax {v:.2f} m/s)."
+                if patologia == "Endocardiose Mitral" and grau_refluxo and key == "q_valvas_mitral":
+                    extra = f"Refluxo mitral {grau_refluxo.lower()} ao Doppler (Vmax {v:.2f} m/s)."
+                atual = (st.session_state.get(key, "") or "").strip()
+                if extra.lower() not in atual.lower():
+                    st.session_state[key] = (atual + ("\n" if atual else "") + extra).strip()
+        def set_if_empty(k, val):
+            val = (val or "").strip()
+            if val and not (st.session_state.get(k, "") or "").strip():
+                st.session_state[k] = val
+        for k, v in [
+            ("q_valvas_mitral", st.session_state.get("txt_valvas", "")),
+            ("q_camaras_ae", st.session_state.get("txt_camaras", "")), ("q_camaras_ve", st.session_state.get("txt_camaras", "")),
+            ("q_camaras_ad", st.session_state.get("txt_ad_vd", "")), ("q_camaras_vd", st.session_state.get("txt_ad_vd", "")),
+            ("q_funcao_sistolica_ve", st.session_state.get("txt_funcao", "")),
+            ("q_pericardio_efusao", st.session_state.get("txt_pericardio", "")),
+            ("q_vasos_aorta", st.session_state.get("txt_vasos", "")),
+        ]:
+            set_if_empty(k, v)
 
 
 def carregar_frases():
