@@ -52,7 +52,14 @@ def render_agendamentos():
         st.subheader("Criar Novo Agendamento")
         col1, col2 = st.columns(2)
         with col1:
-            data_agend = st.date_input("Data", value=date.today(), key="novo_agend_data")
+            _default_data = date.today().strftime("%d/%m/%Y")
+            data_str = st.text_input("Data", value=_default_data, placeholder="dd/mm/aaaa", key="novo_agend_data", help="Formato: dia/mês/ano (ex.: 04/02/2026)")
+            try:
+                data_agend = datetime.strptime(data_str.strip(), "%d/%m/%Y").date() if data_str and data_str.strip() else date.today()
+            except ValueError:
+                data_agend = date.today()
+                if data_str and data_str.strip():
+                    st.error("Data inválida. Use o formato dd/mm/aaaa (ex.: 04/02/2026).")
             hora_agend = st.time_input("Horário", value=datetime.now().time(), key="novo_agend_hora")
             paciente_agend = st.text_input("Paciente", key="novo_agend_paciente")
             tutor_agend = st.text_input("Tutor", key="novo_agend_tutor")
@@ -132,7 +139,7 @@ def render_agendamentos():
                     )
                     st.success(f"✅ Agendamento #{agend_id} criado com sucesso!")
                     st.balloons()
-                    for key in ['novo_agend_paciente', 'novo_agend_tutor', 'novo_agend_telefone', 'novo_agend_clinica', 'novo_agend_obs']:
+                    for key in ['novo_agend_paciente', 'novo_agend_tutor', 'novo_agend_telefone', 'novo_agend_clinica', 'novo_agend_obs', 'novo_agend_data']:
                         if key in st.session_state:
                             del st.session_state[key]
                     st.rerun()
@@ -143,9 +150,19 @@ def render_agendamentos():
         st.subheader("Lista de Agendamentos")
         col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         with col_f1:
-            filtro_data_ini = st.date_input("Data Início", value=date.today(), key="filtro_data_ini")
+            _ini_default = date.today().strftime("%d/%m/%Y")
+            filtro_ini_str = st.text_input("Data Início", value=_ini_default, placeholder="dd/mm/aaaa", key="filtro_data_ini")
+            try:
+                filtro_data_ini = datetime.strptime(filtro_ini_str.strip(), "%d/%m/%Y").date() if filtro_ini_str and filtro_ini_str.strip() else date.today()
+            except ValueError:
+                filtro_data_ini = date.today()
         with col_f2:
-            filtro_data_fim = st.date_input("Data Fim", value=date.today() + timedelta(days=7), key="filtro_data_fim")
+            _fim_default = (date.today() + timedelta(days=7)).strftime("%d/%m/%Y")
+            filtro_fim_str = st.text_input("Data Fim", value=_fim_default, placeholder="dd/mm/aaaa", key="filtro_data_fim")
+            try:
+                filtro_data_fim = datetime.strptime(filtro_fim_str.strip(), "%d/%m/%Y").date() if filtro_fim_str and filtro_fim_str.strip() else date.today() + timedelta(days=7)
+            except ValueError:
+                filtro_data_fim = date.today() + timedelta(days=7)
         with col_f3:
             filtro_status = st.selectbox(
                 "Status",
