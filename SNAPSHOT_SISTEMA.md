@@ -29,7 +29,12 @@ FortCordis_Novo/
 │   └── pages/
 │       ├── dashboard.py       # render_dashboard()
 │       ├── agendamentos.py    # render_agendamentos()
-│       └── laudos.py          # render_laudos(deps) — 8 abas Laudos e Exames
+│       ├── laudos.py          # render_laudos(deps) — 8 abas Laudos e Exames
+│       ├── prontuario.py      # render_prontuario()
+│       ├── prescricoes.py     # render_prescricoes()
+│       ├── financeiro.py      # render_financeiro()
+│       ├── cadastros.py       # render_cadastros()
+│       └── configuracoes.py   # render_configuracoes() — 7 abas
 ├── modules/
 │   ├── auth.py                # Autenticação
 │   └── rbac.py                # Permissões (verificar_permissao)
@@ -64,7 +69,7 @@ Scripts auxiliares (migrações, correções, importação de laudos, etc.) fica
 | 💊 Prescrições          | `app.pages.prescricoes`            | `render_prescricoes()` |
 | 💰 Financeiro           | `app.pages.financeiro`             | `render_financeiro()` |
 | 🏢 Cadastros            | `app.pages.cadastros`              | `render_cadastros()` |
-| ⚙️ Configurações        | `fortcordis_app.py`                | Bloco `elif` (não extraído) |
+| ⚙️ Configurações        | `app.pages.configuracoes`          | `render_configuracoes()` |
 
 Laudos usa `app.laudos_helpers` para frases, schema e listagem de laudos no banco; o restante (PARAMS, referências, PDF, etc.) vem do app principal via `laudos_deps`.
 
