@@ -74,34 +74,33 @@ def render_agendamentos():
                     cursor_temp.execute("SELECT nome FROM clinicas_parceiras ORDER BY nome")
                 lista_clinicas = [row[0] for row in cursor_temp.fetchall()]
                 conn_temp.close()
-                # Opção "Cadastrar nova clínica" no topo; "Digitar manualmente" no final (igual Laudos)
-                opcoes_clinica = ["➕ Cadastrar Nova Clínica"] + (lista_clinicas or []) + ["📝 Digitar manualmente"]
+                # Botão "Cadastrar nova clínica" sempre visível no topo (fora do dropdown)
+                with st.expander("➕ Cadastrar Nova Clínica", expanded=False):
+                    st.caption("Não encontrou a clínica na lista? Cadastre aqui.")
+                    nova_clinica_nome = st.text_input("Nome da Clínica *", key="nova_clinica_nome_agend")
+                    nova_clinica_end = st.text_input("Endereço", key="nova_clinica_end_agend")
+                    nova_clinica_tel = st.text_input("Telefone", key="nova_clinica_tel_agend")
+                    if st.button("✅ Cadastrar Clínica", key="btn_cadastrar_clinica_agend", type="primary"):
+                        if nova_clinica_nome:
+                            clinica_id, msg = _cadastrar_clinica_rapido_agendamentos(
+                                nova_clinica_nome, nova_clinica_end, nova_clinica_tel
+                            )
+                            if clinica_id:
+                                st.success(f"✅ Clínica '{nova_clinica_nome}' cadastrada!")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {msg}")
+                        else:
+                            st.error("Nome da clínica é obrigatório.")
+                # Dropdown: só clínicas cadastradas + digitar manualmente
+                opcoes_clinica = (lista_clinicas or []) + ["📝 Digitar manualmente"]
                 clinica_agend_sel = st.selectbox(
                     "Clínica",
                     options=opcoes_clinica,
                     key="novo_agend_clinica_sel",
-                    help="Clínicas cadastradas em Cadastros > Clínicas Parceiras. Use a primeira opção para cadastrar uma nova."
+                    help="Clínicas cadastradas. Use o bloco acima para cadastrar uma nova."
                 )
-                if clinica_agend_sel == "➕ Cadastrar Nova Clínica":
-                    st.info("💡 Cadastrando nova clínica no sistema...")
-                    with st.expander("📝 Dados da Nova Clínica", expanded=True):
-                        nova_clinica_nome = st.text_input("Nome da Clínica *", key="nova_clinica_nome_agend")
-                        nova_clinica_end = st.text_input("Endereço", key="nova_clinica_end_agend")
-                        nova_clinica_tel = st.text_input("Telefone", key="nova_clinica_tel_agend")
-                        if st.button("✅ Cadastrar Clínica", key="btn_cadastrar_clinica_agend", type="primary"):
-                            if nova_clinica_nome:
-                                clinica_id, msg = _cadastrar_clinica_rapido_agendamentos(
-                                    nova_clinica_nome, nova_clinica_end, nova_clinica_tel
-                                )
-                                if clinica_id:
-                                    st.success(f"✅ Clínica '{nova_clinica_nome}' cadastrada!")
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ {msg}")
-                            else:
-                                st.error("Nome da clínica é obrigatório.")
-                    clinica_agend = None
-                elif clinica_agend_sel == "📝 Digitar manualmente":
+                if clinica_agend_sel == "📝 Digitar manualmente":
                     clinica_agend = st.text_input("Digite o nome da clínica", key="novo_agend_clinica_manual")
                 else:
                     clinica_agend = clinica_agend_sel
