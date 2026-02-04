@@ -10,6 +10,7 @@ from app.config import DB_PATH
 from fortcordis_modules.database import (
     dar_baixa_os,
     excluir_os,
+    excluir_os_em_lote,
     garantir_colunas_financeiro,
     listar_financeiro_pendentes,
 )
@@ -89,12 +90,32 @@ def render_financeiro():
                 valor = float(row.get("Valor", 0) or 0)
                 opcoes_os.append((int(row["id"]), f"{num_os} – {clinica} – R$ {valor:,.2f}"))
             if opcoes_os:
+                ids_os = [x[0] for x in opcoes_os]
+                labels_os = {x[0]: x[1] for x in opcoes_os}
+
+                st.markdown("**Excluir em lote**")
+                os_lote = st.multiselect(
+                    "Selecione as OS a excluir (pode escolher várias)",
+                    options=ids_os,
+                    format_func=lambda x: labels_os.get(x, str(x)),
+                    key="excluir_os_lote"
+                )
+                if os_lote:
+                    if st.button("🗑️ Excluir selecionadas", key="btn_excluir_lote", type="secondary"):
+                        n = excluir_os_em_lote(os_lote)
+                        if n > 0:
+                            st.success(f"✅ {n} OS excluída(s).")
+                            st.rerun()
+                        else:
+                            st.error("Não foi possível excluir.")
+
+                st.markdown("**Excluir uma por uma**")
                 col_sel, col_btn = st.columns([3, 1])
                 with col_sel:
                     os_para_excluir = st.selectbox(
                         "Selecione a OS a excluir",
-                        options=[x[0] for x in opcoes_os],
-                        format_func=lambda x: next(n for i, n in opcoes_os if i == x),
+                        options=ids_os,
+                        format_func=lambda x: labels_os.get(x, str(x)),
                         key="excluir_os_sel"
                     )
                 with col_btn:

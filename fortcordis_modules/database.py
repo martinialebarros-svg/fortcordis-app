@@ -619,6 +619,25 @@ def excluir_os(financeiro_id):
     return ok
 
 
+def excluir_os_em_lote(ids):
+    """Remove várias ordens de serviço de uma vez. ids: lista de financeiro.id. Retorna quantidade excluída."""
+    if not ids:
+        return 0
+    garantir_colunas_financeiro()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        placeholders = ",".join("?" * len(ids))
+        cursor.execute(f"DELETE FROM financeiro WHERE id IN ({placeholders})", list(ids))
+        conn.commit()
+        return cursor.rowcount
+    except sqlite3.OperationalError:
+        conn.rollback()
+        return 0
+    finally:
+        conn.close()
+
+
 def listar_financeiro_pendentes():
     """Retorna lista de OS pendentes (para cobrança / dar baixa)."""
     garantir_colunas_financeiro()
