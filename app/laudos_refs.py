@@ -1,5 +1,6 @@
 # Referências e tabelas para laudos ecocardiográficos (caninos/felinos)
 # Fase B: extraído do fortcordis_app.py
+import json
 import os
 from pathlib import Path
 import pandas as pd
@@ -686,6 +687,30 @@ def carregar_tabela_referencia():
 @st.cache_data(show_spinner=False, max_entries=3, ttl=3600)
 def carregar_tabela_referencia_cached():
     return carregar_tabela_referencia()
+
+
+@st.cache_data(show_spinner=False, ttl=10, max_entries=10)
+def listar_registros_arquivados_cached(pasta_str: str):
+    """Lê metadados dos laudos arquivados (JSON) com TTL."""
+    pasta = Path(pasta_str)
+    arquivos = sorted(pasta.glob("*.json"), reverse=True)
+    registros = []
+    for p in arquivos:
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+            pac = obj.get("paciente", {}) if isinstance(obj, dict) else {}
+            registros.append({
+                "data": pac.get("data_exame", ""),
+                "clinica": pac.get("clinica", ""),
+                "animal": pac.get("nome", ""),
+                "tutor": pac.get("tutor", ""),
+                "arquivo_json": str(p),
+                "arquivo_pdf": str(pasta / (p.stem + ".pdf"))
+            })
+        except Exception:
+            pass
+    return registros
+
 
 def calcular_referencia_tabela(parametro, peso_kg, df=None):
     if df is None:

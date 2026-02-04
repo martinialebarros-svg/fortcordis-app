@@ -42,6 +42,7 @@ from app.laudos_refs import (
     limpar_e_converter_tabela_felinos,
     carregar_tabela_referencia_cached,
     carregar_tabela_referencia_felinos_cached,
+    listar_registros_arquivados_cached,
     calcular_referencia_tabela,
     interpretar,
     interpretar_divedn,
