@@ -1113,9 +1113,7 @@ def render_prontuario():
     # ============================================================================
     # FUNÇÕES DE GERENCIAMENTO DE LAUDOS NO BANCO
     # ============================================================================
-
-    import json
-    from datetime import datetime
+    # (json e datetime já importados no topo do módulo)
 
     def salvar_laudo_no_banco(tipo_exame, dados_laudo, caminho_json, caminho_pdf):
         """Salva o laudo no banco de dados (usa o mesmo banco do app)"""
