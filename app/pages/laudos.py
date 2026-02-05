@@ -419,6 +419,15 @@ def render_laudos(deps=None):
         except:
             pass
 
+        # Garantir tabela de referência carregada na aba Medidas (para exibir Ref./Interp. por espécie)
+        especie_medidas = normalizar_especie_label(st.session_state.get('cad_especie', 'Canina'))
+        if especie_is_felina(especie_medidas):
+            if st.session_state.get("df_ref_felinos") is None:
+                st.session_state["df_ref_felinos"] = carregar_tabela_referencia_felinos_cached()
+        else:
+            if st.session_state.get("df_ref") is None:
+                st.session_state["df_ref"] = carregar_tabela_referencia_cached()
+
         # Interpretação automática (apenas quando houver referência cadastrada; por enquanto, apenas para cães)
         especie_norm = normalizar_especie_label(st.session_state.get('cad_especie', 'Canina'))
         is_canina = (especie_norm == "Canina")
@@ -2135,6 +2144,14 @@ def render_laudos(deps=None):
 
         if verificar_permissao("laudos", "criar"):
             if st.button("🧾 Gerar PDF"):
+                # Garantir tabela de referência carregada para o PDF (espécie atual)
+                esp_pdf = normalizar_especie_label(st.session_state.get("cad_especie", "Canina"))
+                if especie_is_felina(esp_pdf):
+                    if st.session_state.get("df_ref_felinos") is None:
+                        st.session_state["df_ref_felinos"] = carregar_tabela_referencia_felinos_cached()
+                else:
+                    if st.session_state.get("df_ref") is None:
+                        st.session_state["df_ref"] = carregar_tabela_referencia_cached()
                 pdf_bytes = criar_pdf()
                 st.session_state["pdf_bytes"] = pdf_bytes
                 
