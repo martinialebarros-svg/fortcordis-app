@@ -1243,7 +1243,7 @@ def atualizar_status_acompanhamentos():
                     status = 'no_prazo'
                 
                 cursor.execute("UPDATE acompanhamentos SET status = ? WHERE id = ?", (status, acomp_id))
-            except:
+            except (sqlite3.Error, ValueError):
                 pass
     
     conn.commit()

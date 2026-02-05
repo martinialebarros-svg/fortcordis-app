@@ -315,7 +315,7 @@ def formatar_posologia(peso_kg, medicamento_info):
     # Extrai concentração numérica (ex: "5mg/ml" -> 5.0)
     try:
         conc_num = float(concentracao.lower().split('mg')[0].strip())
-    except:
+    except (ValueError, TypeError, IndexError):
         conc_num = None
     
     if conc_num:

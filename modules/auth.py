@@ -140,6 +140,25 @@ def inserir_papeis_padrao():
     print("✅ Papéis padrão inseridos com sucesso!")
 
 
+def validar_senha(senha: str) -> Tuple[bool, str]:
+    """
+    Valida complexidade da senha.
+    Exige: mínimo 8 caracteres, pelo menos 1 maiúscula, 1 minúscula, 1 número.
+
+    Returns:
+        (valida, mensagem_erro)
+    """
+    if len(senha) < 8:
+        return False, "Senha deve ter no mínimo 8 caracteres"
+    if not any(c.isupper() for c in senha):
+        return False, "Senha deve conter pelo menos 1 letra maiúscula"
+    if not any(c.islower() for c in senha):
+        return False, "Senha deve conter pelo menos 1 letra minúscula"
+    if not any(c.isdigit() for c in senha):
+        return False, "Senha deve conter pelo menos 1 número"
+    return True, ""
+
+
 def hash_senha(senha: str) -> str:
     """
     Gera hash seguro da senha usando bcrypt.
@@ -187,10 +206,11 @@ def criar_usuario(
         (sucesso, mensagem, usuario_id ou None, nome ou None)
     """
     # Validações
-    if len(senha) < 8:
-        return False, "❌ Senha deve ter no mínimo 8 caracteres", None, None
+    senha_ok, senha_msg = validar_senha(senha)
+    if not senha_ok:
+        return False, f"❌ {senha_msg}", None, None
 
-    if not "@" in email:
+    if "@" not in email:
         return False, "❌ Email inválido", None, None
 
     conn = sqlite3.connect(str(DB_PATH))
@@ -403,9 +423,10 @@ def atualizar_senha(usuario_id: int, senha_atual: str, nova_senha: str) -> Tuple
     Returns:
         (sucesso, mensagem)
     """
-    if len(nova_senha) < 8:
-        return False, "❌ Nova senha deve ter no mínimo 8 caracteres"
-    
+    senha_ok, senha_msg = validar_senha(nova_senha)
+    if not senha_ok:
+        return False, f"❌ {senha_msg}"
+
     conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
     
@@ -476,8 +497,9 @@ def redefinir_senha_por_token(token: str, nova_senha: str) -> Tuple[bool, str]:
     """
     Redefine a senha usando o token do fluxo "Esqueci minha senha".
     """
-    if len(nova_senha) < 8:
-        return False, "❌ Nova senha deve ter no mínimo 8 caracteres"
+    senha_ok, senha_msg = validar_senha(nova_senha)
+    if not senha_ok:
+        return False, f"❌ {senha_msg}"
     conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
     try:
@@ -780,9 +802,9 @@ def validar_token_persistente(token):
         
         resultado = cursor.fetchone()
         conn.close()
-        
+
         return resultado[0] if resultado else None
-    except:
+    except Exception:
         return None
 
 def invalidar_token_persistente(token):
@@ -804,7 +826,7 @@ def invalidar_token_persistente(token):
         
         conn.commit()
         conn.close()
-    except:
+    except (sqlite3.Error, OSError):
         pass
 
 def limpar_tokens_expirados():
@@ -820,7 +842,7 @@ def limpar_tokens_expirados():
         
         conn.commit()
         conn.close()
-    except:
+    except (sqlite3.Error, OSError):
         pass
 
 def carregar_sessao_por_token(token):
@@ -1376,7 +1398,7 @@ def debug_sessao():
                 dados = json.load(f)
             st.sidebar.write(f"**Token:** {dados['token'][:20]}...")
             st.sidebar.write(f"**Expira:** {dados['expira_em']}")
-        except:
+        except (json.JSONDecodeError, KeyError, OSError):
             st.sidebar.write("Erro ao ler arquivo")
 
 # ============================================================================

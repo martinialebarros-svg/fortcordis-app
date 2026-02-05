@@ -60,7 +60,7 @@ def render_prescricoes():
         # Pega peso da sessão
         try:
             peso_default = float(st.session_state.get("cad_peso", 10.0))
-        except:
+        except (ValueError, TypeError):
             peso_default = 10.0
 
         col_pac1, col_pac2, col_pac3 = st.columns(3)
@@ -123,7 +123,7 @@ def render_prescricoes():
                 FROM prescricoes_templates
                 ORDER BY nome
             """, conn_temp)
-        except:
+        except (pd.errors.DatabaseError, sqlite3.OperationalError):
             templates_df = pd.DataFrame()
         conn_temp.close()
 
@@ -212,7 +212,7 @@ def render_prescricoes():
                         try:
                             conc_num = float(med_info['concentracao_valor'])
                             volume_calculado = dose_total_mg / conc_num
-                        except:
+                        except (ValueError, TypeError, ZeroDivisionError):
                             pass
 
                     st.success(f"""
@@ -571,7 +571,7 @@ def render_prescricoes():
                 "SELECT DISTINCT categoria FROM medicamentos WHERE categoria IS NOT NULL ORDER BY categoria",
                 conn_med2
             )['categoria'].tolist()
-        except:
+        except (pd.errors.DatabaseError, sqlite3.OperationalError):
             meds_todos = pd.DataFrame()
             categorias = []
         conn_med2.close()
@@ -819,7 +819,7 @@ def render_prescricoes():
                 FROM prescricoes_templates
                 ORDER BY nome
             """, conn_temp2)
-        except:
+        except (pd.errors.DatabaseError, sqlite3.OperationalError):
             templates_todos = pd.DataFrame()
         conn_temp2.close()
 

@@ -946,7 +946,7 @@ def _parse_num(texto: str):
     num = m.group(1).replace(",", ".")
     try:
         return float(num)
-    except:
+    except (ValueError, TypeError):
         return None
 
 def extrair_peso_kg(soup):
@@ -1158,7 +1158,7 @@ if uploaded_xml:
         # mantém também o peso numérico para referências
         try:
             st.session_state["peso_atual"] = float(str(peso).replace(",", "."))
-        except:
+        except (ValueError, TypeError):
             st.session_state["peso_atual"] = 10.0
     
     
@@ -1207,7 +1207,7 @@ if uploaded_xml:
                         if node:
                             try:
                                 return float(node.get_text())
-                            except:
+                            except (ValueError, TypeError):
                                 pass
             return 0.0
 

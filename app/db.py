@@ -2,6 +2,7 @@
 import logging
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 
@@ -12,6 +13,28 @@ from app.utils import nome_proprio_ptbr, _norm_key
 from app.sql_safe import validar_coluna
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def get_db():
+    """Context manager para conexão ao banco. Faz commit automático ou rollback em caso de erro.
+
+    Uso:
+        with get_db() as conn:
+            conn.execute("INSERT INTO ...", (...))
+    """
+    conn = sqlite3.connect(str(DB_PATH), timeout=15, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _db_conn_safe():
