@@ -338,8 +338,7 @@ def render_configuracoes():
                             st.success(f"✅ Papel alterado com sucesso para: {novo_papel_str.split(' - ')[0]}")
                             st.balloons()
                             
-                            # Recarrega a página após 2 segundos
-                            import time
+                            # Recarrega a página após 1 segundo
                             time.sleep(1)
                             st.rerun()
                             
