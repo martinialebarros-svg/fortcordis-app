@@ -5,6 +5,8 @@ from datetime import date, datetime, timedelta
 import streamlit as st
 
 from app.config import DB_PATH, formatar_data_br
+from app.services.pacientes import buscar_pacientes_por_termo_livre
+from app.laudos_banco import listar_animais_tutores_de_laudos
 from fortcordis_modules.database import (
     criar_agendamento,
     listar_agendamentos,
@@ -50,6 +52,50 @@ def render_agendamentos():
 
     with tab_novo:
         st.subheader("Criar Novo Agendamento")
+
+        # Vincular a paciente já cadastrado ou com exame no sistema (evita duplicar ao remarcar)
+        with st.expander("🔗 Vincular a paciente já cadastrado ou com exame no sistema", expanded=False):
+            st.caption("Busque por nome do animal ou do tutor para preencher Paciente, Tutor e Telefone com um cadastro existente ou com um animal que já tenha laudo.")
+            busca_vinculo = st.text_input("Buscar (animal ou tutor)", key="agend_vinculo_busca", placeholder="Ex.: Bolota ou Francisco")
+            lista_vinculo = []
+            if busca_vinculo and str(busca_vinculo).strip():
+                cadastro = buscar_pacientes_por_termo_livre(termo=busca_vinculo.strip(), limite=15)
+                laudos = listar_animais_tutores_de_laudos(termo=busca_vinculo.strip(), limite=15)
+                cadastro_keys = {(c["paciente"].strip().lower(), c["tutor"].strip().lower()) for c in cadastro}
+                for c in cadastro:
+                    lista_vinculo.append({
+                        "paciente": c["paciente"],
+                        "tutor": c["tutor"],
+                        "telefone": c.get("telefone") or "",
+                        "rotulo": f"{c['paciente']} — {c['tutor']} (cadastro)",
+                    })
+                for L in laudos:
+                    pa, tu = (L.get("paciente") or "").strip(), (L.get("tutor") or "").strip()
+                    if (pa.lower(), tu.lower()) not in cadastro_keys:
+                        lista_vinculo.append({
+                            "paciente": pa,
+                            "tutor": tu,
+                            "telefone": "",
+                            "rotulo": f"{pa or '?'} — {tu or '?'} (exame no sistema)",
+                        })
+            if lista_vinculo:
+                opcoes_rotulos = ["— Selecione para preencher —"] + [x["rotulo"] for x in lista_vinculo]
+                sel_rotulo = st.selectbox(
+                    "Selecione o paciente para preencher os campos abaixo",
+                    options=opcoes_rotulos,
+                    key="agend_vinculo_sel",
+                )
+                if sel_rotulo and sel_rotulo != "— Selecione para preencher —":
+                    idx = opcoes_rotulos.index(sel_rotulo) - 1
+                    if 0 <= idx < len(lista_vinculo):
+                        rec = lista_vinculo[idx]
+                        st.session_state["novo_agend_paciente"] = rec["paciente"]
+                        st.session_state["novo_agend_tutor"] = rec["tutor"]
+                        st.session_state["novo_agend_telefone"] = rec.get("telefone") or ""
+                        st.success(f"Preenchido: **{rec['paciente']}** — **{rec['tutor']}**")
+            elif busca_vinculo and str(busca_vinculo).strip():
+                st.info("Nenhum paciente ou laudo encontrado com esse termo. Cadastre o paciente nos campos abaixo.")
+
         col1, col2 = st.columns(2)
         with col1:
             _default_data = date.today().strftime("%d/%m/%Y")
@@ -61,7 +107,7 @@ def render_agendamentos():
                 if data_str and data_str.strip():
                     st.error("Data inválida. Use o formato dd/mm/aaaa (ex.: 04/02/2026).")
             hora_agend = st.time_input("Horário", value=datetime.now().time(), key="novo_agend_hora")
-            paciente_agend = st.text_input("Paciente", key="novo_agend_paciente")
+            paciente_agend = st.text_input("Paciente", key="novo_agend_paciente", help="Ou use o bloco acima para vincular a um paciente já cadastrado ou com exame.")
             tutor_agend = st.text_input("Tutor", key="novo_agend_tutor")
         with col2:
             telefone_agend = st.text_input("Telefone/WhatsApp", key="novo_agend_telefone")

@@ -157,6 +157,58 @@ def salvar_laudo_no_banco(
         return None, str(e)
 
 
+def listar_animais_tutores_de_laudos(termo: Optional[str] = None, limite: int = 15) -> list:
+    """
+    Lista pares (animal, tutor) distintos que aparecem em laudos (arquivos ou ecocardiograma),
+    opcionalmente filtrados por termo (nome do animal ou tutor).
+    Para vincular um novo agendamento a um paciente que já tem exame no sistema.
+    Retorna lista de dicts: [{"paciente": str, "tutor": str, "fonte": "laudo"}, ...].
+    """
+    if not termo or not str(termo).strip():
+        return []
+    termo = f"%{str(termo).strip()}%"
+    out = []
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+        # laudos_arquivos
+        cursor.execute(
+            """SELECT name FROM sqlite_master WHERE type='table' AND name='laudos_arquivos'"""
+        )
+        if cursor.fetchone():
+            cursor.execute("""
+                SELECT DISTINCT TRIM(COALESCE(nome_animal,'')) AS animal, TRIM(COALESCE(nome_tutor,'')) AS tutor
+                FROM laudos_arquivos
+                WHERE (UPPER(COALESCE(nome_animal,'')) LIKE UPPER(?) OR UPPER(COALESCE(nome_tutor,'')) LIKE UPPER(?))
+                  AND (TRIM(COALESCE(nome_animal,'')) != '' OR TRIM(COALESCE(nome_tutor,'')) != '')
+                LIMIT ?
+            """, (termo, termo, limite))
+            for row in cursor.fetchall():
+                out.append({"paciente": row[0] or "", "tutor": row[1] or "", "fonte": "laudo"})
+        # laudos_ecocardiograma (nome_paciente = animal)
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='laudos_ecocardiograma'"
+        )
+        if cursor.fetchone():
+            cursor.execute("""
+                SELECT DISTINCT TRIM(COALESCE(nome_paciente,'')) AS animal, '' AS tutor
+                FROM laudos_ecocardiograma
+                WHERE UPPER(COALESCE(nome_paciente,'')) LIKE UPPER(?)
+                  AND TRIM(COALESCE(nome_paciente,'')) != ''
+                LIMIT ?
+            """, (termo, limite))
+            for row in cursor.fetchall():
+                entry = {"paciente": row[0] or "", "tutor": row[1] or "", "fonte": "laudo"}
+                if entry not in out and not any(
+                    o["paciente"] == entry["paciente"] and o["tutor"] == entry["tutor"] for o in out
+                ):
+                    out.append(entry)
+        conn.close()
+    except Exception as e:
+        logger.exception("Falha ao listar animais/tutores de laudos: %s", e)
+    return out[:limite]
+
+
 def buscar_laudos(
     tipo_exame: Optional[str] = None,
     nome_paciente: Optional[str] = None,

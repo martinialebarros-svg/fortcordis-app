@@ -140,6 +140,45 @@ def buscar_pacientes_para_vinculo(
         conn.close()
 
 
+def buscar_pacientes_por_termo_livre(
+    termo: Optional[str] = None,
+    limite: int = 20,
+) -> list:
+    """
+    Busca pacientes por um único termo que pode ser nome do animal ou do tutor
+    (para vincular agendamento a paciente já cadastrado).
+    Retorna lista de dicts: [{"id", "tutor_id", "paciente", "tutor", "telefone", "fonte": "cadastro"}, ...].
+    """
+    if not termo or not str(termo).strip():
+        return []
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        t = f"%{str(termo).strip()}%"
+        cursor = conn.execute("""
+            SELECT p.id, p.tutor_id, p.nome, t.nome, COALESCE(t.telefone, '')
+            FROM pacientes p
+            JOIN tutores t ON p.tutor_id = t.id
+            WHERE (p.ativo = 1 OR p.ativo IS NULL)
+              AND (UPPER(p.nome) LIKE UPPER(?) OR UPPER(t.nome) LIKE UPPER(?))
+            ORDER BY t.nome, p.nome
+            LIMIT ?
+        """, (t, t, limite))
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": r[0],
+                "tutor_id": r[1],
+                "paciente": r[2] or "",
+                "tutor": r[3] or "",
+                "telefone": (r[4] or "").strip(),
+                "fonte": "cadastro",
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
 def atualizar_peso_paciente(paciente_id: int, peso_kg: float) -> bool:
     """Atualiza o peso do paciente. Retorna True se ok."""
     conn = sqlite3.connect(str(DB_PATH))
