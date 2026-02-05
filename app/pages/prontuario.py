@@ -178,7 +178,7 @@ def render_prontuario():
                                                 'clinica': dados.get('clinica', 'N/I'),
                                                 'arquivo': str(arq)
                                             })
-                                except:
+                                except (json.JSONDecodeError, KeyError, OSError):
                                     continue
 
                         if laudos_pac:

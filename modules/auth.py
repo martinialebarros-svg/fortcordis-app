@@ -140,6 +140,25 @@ def inserir_papeis_padrao():
     print("✅ Papéis padrão inseridos com sucesso!")
 
 
+def validar_senha(senha: str) -> Tuple[bool, str]:
+    """
+    Valida complexidade da senha.
+    Exige: mínimo 8 caracteres, pelo menos 1 maiúscula, 1 minúscula, 1 número.
+
+    Returns:
+        (valida, mensagem_erro)
+    """
+    if len(senha) < 8:
+        return False, "Senha deve ter no mínimo 8 caracteres"
+    if not any(c.isupper() for c in senha):
+        return False, "Senha deve conter pelo menos 1 letra maiúscula"
+    if not any(c.islower() for c in senha):
+        return False, "Senha deve conter pelo menos 1 letra minúscula"
+    if not any(c.isdigit() for c in senha):
+        return False, "Senha deve conter pelo menos 1 número"
+    return True, ""
+
+
 def hash_senha(senha: str) -> str:
     """
     Gera hash seguro da senha usando bcrypt.
@@ -187,10 +206,11 @@ def criar_usuario(
         (sucesso, mensagem, usuario_id ou None, nome ou None)
     """
     # Validações
-    if len(senha) < 8:
-        return False, "❌ Senha deve ter no mínimo 8 caracteres", None, None
+    senha_ok, senha_msg = validar_senha(senha)
+    if not senha_ok:
+        return False, f"❌ {senha_msg}", None, None
 
-    if not "@" in email:
+    if "@" not in email:
         return False, "❌ Email inválido", None, None
 
     conn = sqlite3.connect(str(DB_PATH))
@@ -337,10 +357,44 @@ def autenticar(email: str, senha: str) -> Tuple[bool, Optional[Dict], str]:
         conn.close()
 
 
+SESSION_TIMEOUT_MINUTOS = 60  # Sessão expira após 60 minutos de inatividade
+
+
+def verificar_timeout_sessao() -> bool:
+    """
+    Verifica se a sessão expirou por inatividade.
+    Deve ser chamada a cada página carregada.
+    Retorna True se a sessão ainda é válida, False se expirou.
+    """
+    if not st.session_state.get("autenticado"):
+        return False
+
+    agora = datetime.now()
+    ultimo_acesso = st.session_state.get("ultimo_acesso_sessao")
+
+    if ultimo_acesso:
+        try:
+            ultimo = datetime.fromisoformat(ultimo_acesso)
+            if (agora - ultimo).total_seconds() > SESSION_TIMEOUT_MINUTOS * 60:
+                # Sessão expirou por inatividade
+                token = st.session_state.get("auth_token")
+                if token:
+                    invalidar_token_persistente(token)
+                remover_sessao_persistente()
+                st.session_state.clear()
+                return False
+        except (ValueError, TypeError):
+            pass
+
+    # Atualiza timestamp de último acesso
+    st.session_state["ultimo_acesso_sessao"] = agora.isoformat()
+    return True
+
+
 def obter_usuario_logado() -> Optional[Dict]:
     """
     Retorna os dados do usuário logado via Streamlit session_state.
-    
+
     Returns:
         Dicionário com dados do usuário ou None
     """
@@ -369,9 +423,10 @@ def atualizar_senha(usuario_id: int, senha_atual: str, nova_senha: str) -> Tuple
     Returns:
         (sucesso, mensagem)
     """
-    if len(nova_senha) < 8:
-        return False, "❌ Nova senha deve ter no mínimo 8 caracteres"
-    
+    senha_ok, senha_msg = validar_senha(nova_senha)
+    if not senha_ok:
+        return False, f"❌ {senha_msg}"
+
     conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
     
@@ -442,8 +497,9 @@ def redefinir_senha_por_token(token: str, nova_senha: str) -> Tuple[bool, str]:
     """
     Redefine a senha usando o token do fluxo "Esqueci minha senha".
     """
-    if len(nova_senha) < 8:
-        return False, "❌ Nova senha deve ter no mínimo 8 caracteres"
+    senha_ok, senha_msg = validar_senha(nova_senha)
+    if not senha_ok:
+        return False, f"❌ {senha_msg}"
     conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
     try:
@@ -642,20 +698,20 @@ def criar_usuario_admin_inicial():
 
 def mostrar_info_usuario():
     """
-    Exibe informações do usuário logado na sidebar.
+    Exibe informações do usuário logado na sidebar com botão de sair.
     """
-    usuario = obter_usuario_logado()
-    if not usuario:
+    if not st.session_state.get("autenticado"):
         return
-    
+
+    nome = st.session_state.get("usuario_nome", "")
+    email = st.session_state.get("usuario_email", "")
+
     st.sidebar.markdown("---")
-    st.sidebar.markdown(f"**👤 {usuario['nome']}**")
-    st.sidebar.caption(f"📧 {usuario['email']}")
-    
-    papeis = ", ".join([p["nome"].title() for p in usuario["papeis"]])
-    st.sidebar.caption(f"🎭 {papeis}")
-    
-    if st.sidebar.button("🚪 Sair", use_container_width=True):
+    st.sidebar.markdown(f"**👤 {nome}**")
+    if email:
+        st.sidebar.caption(f"📧 {email}")
+
+    if st.sidebar.button("🚪 Sair", use_container_width=True, key="btn_logout_sidebar"):
         fazer_logout()
 
 
@@ -746,9 +802,9 @@ def validar_token_persistente(token):
         
         resultado = cursor.fetchone()
         conn.close()
-        
+
         return resultado[0] if resultado else None
-    except:
+    except Exception:
         return None
 
 def invalidar_token_persistente(token):
@@ -770,7 +826,7 @@ def invalidar_token_persistente(token):
         
         conn.commit()
         conn.close()
-    except:
+    except (sqlite3.Error, OSError):
         pass
 
 def limpar_tokens_expirados():
@@ -786,7 +842,7 @@ def limpar_tokens_expirados():
         
         conn.commit()
         conn.close()
-    except:
+    except (sqlite3.Error, OSError):
         pass
 
 def carregar_sessao_por_token(token):
@@ -1342,7 +1398,7 @@ def debug_sessao():
                 dados = json.load(f)
             st.sidebar.write(f"**Token:** {dados['token'][:20]}...")
             st.sidebar.write(f"**Expira:** {dados['expira_em']}")
-        except:
+        except (json.JSONDecodeError, KeyError, OSError):
             st.sidebar.write("Erro ao ler arquivo")
 
 # ============================================================================

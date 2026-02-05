@@ -17,6 +17,7 @@ from PIL import Image
 from app.config import DB_PATH
 from app.db import _db_conn, _db_init
 from app.laudos_banco import _criar_tabelas_laudos_se_nao_existirem
+from app.sql_safe import validar_tabela, validar_coluna
 from app.utils import _norm_key
 from modules.rbac import verificar_permissao, obter_permissoes_usuario
 
@@ -337,8 +338,7 @@ def render_configuracoes():
                             st.success(f"✅ Papel alterado com sucesso para: {novo_papel_str.split(' - ')[0]}")
                             st.balloons()
                             
-                            # Recarrega a página após 2 segundos
-                            import time
+                            # Recarrega a página após 1 segundo
                             time.sleep(1)
                             st.rerun()
                             
@@ -950,9 +950,10 @@ def render_configuracoes():
                         tabelas_no_backup = {r[0] for r in cur_b.fetchall()}
                         def _count_backup(tabela):
                             try:
-                                cur_b.execute(f"SELECT COUNT(*) FROM {tabela}")
+                                tab = validar_tabela(tabela)
+                                cur_b.execute(f"SELECT COUNT(*) FROM {tab}")
                                 return cur_b.fetchone()[0]
-                            except sqlite3.OperationalError:
+                            except (sqlite3.OperationalError, ValueError):
                                 return 0
                         n_c_b, n_t_b = _count_backup("clinicas"), _count_backup("tutores")
                         n_p_b = _count_backup("pacientes")
@@ -995,21 +996,25 @@ def render_configuracoes():
                         )""")
                         for col, tipo in [("ativo", "INTEGER DEFAULT 1"), ("peso_kg", "REAL"), ("microchip", "TEXT"), ("observacoes", "TEXT")]:
                             try:
-                                cur_l.execute(f"ALTER TABLE pacientes ADD COLUMN {col} {tipo}")
-                            except sqlite3.OperationalError:
+                                c = validar_coluna(col)
+                                cur_l.execute(f"ALTER TABLE pacientes ADD COLUMN {c} {tipo}")
+                            except (sqlite3.OperationalError, ValueError):
                                 pass
                         for col, tipo in [("whatsapp", "TEXT"), ("ativo", "INTEGER DEFAULT 1")]:
                             try:
-                                cur_l.execute(f"ALTER TABLE tutores ADD COLUMN {col} {tipo}")
-                            except sqlite3.OperationalError:
+                                c = validar_coluna(col)
+                                cur_l.execute(f"ALTER TABLE tutores ADD COLUMN {c} {tipo}")
+                            except (sqlite3.OperationalError, ValueError):
                                 pass
                         _criar_tabelas_laudos_se_nao_existirem(cur_l)
                         # Garantir colunas nome_clinica e nome_tutor ANTES de importar laudos
                         for _tab in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
                             for _col, _tipo in [("nome_clinica", "TEXT"), ("nome_tutor", "TEXT")]:
                                 try:
-                                    cur_l.execute(f"ALTER TABLE {_tab} ADD COLUMN {_col} {_tipo}")
-                                except sqlite3.OperationalError:
+                                    t = validar_tabela(_tab)
+                                    c = validar_coluna(_col)
+                                    cur_l.execute(f"ALTER TABLE {t} ADD COLUMN {c} {_tipo}")
+                                except (sqlite3.OperationalError, ValueError):
                                     pass
                         # Garantir que clinicas_parceiras existe (pode não existir em deploy novo)
                         cur_l.execute("""
@@ -1059,8 +1064,9 @@ def render_configuracoes():
                         if limpar_laudos_antes:
                             for _t in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
                                 try:
-                                    cur_l.execute(f"DELETE FROM {_t}")
-                                except sqlite3.OperationalError:
+                                    t = validar_tabela(_t)
+                                    cur_l.execute(f"DELETE FROM {t}")
+                                except (sqlite3.OperationalError, ValueError):
                                     pass
                             conn_local.commit()
                         map_clinica = {}

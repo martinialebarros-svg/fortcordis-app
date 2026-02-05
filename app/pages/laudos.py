@@ -416,7 +416,7 @@ def render_laudos(deps=None):
         # mantém o peso numérico sincronizado com o campo de cadastro (para cálculos)
         try:
             st.session_state["peso_atual"] = float(str(st.session_state.get("cad_peso", "")).replace(",", "."))
-        except:
+        except (ValueError, TypeError):
             pass
 
         # Garantir tabela de referência carregada na aba Medidas (para exibir Ref./Interp. por espécie)
@@ -543,12 +543,12 @@ def render_laudos(deps=None):
                             with col_val:
                                 try:
                                     dived = float(dados.get("LVIDd", 0.0) or 0.0)
-                                except:
+                                except (ValueError, TypeError):
                                     dived = 0.0
 
                                 try:
                                     peso_kg = float(st.session_state.get("peso_atual", 0.0) or 0.0)
-                                except:
+                                except (ValueError, TypeError):
                                     peso_kg = 0.0
 
                                 # dived está em mm -> converter para cm
@@ -1273,7 +1273,7 @@ def render_laudos(deps=None):
             def _to_date_safe(s):
                 try:
                     return datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
-                except:
+                except (ValueError, TypeError):
                     return None
 
             df_busca["data_dt"] = df_busca["data"].apply(_to_date_safe)

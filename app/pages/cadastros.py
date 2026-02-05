@@ -229,7 +229,7 @@ def render_cadastros():
             else:
                 st.info("Nenhuma clínica cadastrada ainda")
 
-        except:
+        except (sqlite3.OperationalError, pd.errors.DatabaseError):
             st.info("Nenhuma clínica cadastrada ainda")
         finally:
             conn.close()

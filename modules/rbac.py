@@ -432,17 +432,16 @@ def exigir_permissao(modulo: str, acao: str):
     Decorator/função para exigir permissão antes de executar código.
     Se não tiver permissão, mostra mensagem e para.
     """
-    # ✅ CORRIGIDO: Usa usuario_id ao invés de usuario_logado
     if not st.session_state.get("autenticado"):
         st.error("❌ Você precisa estar logado")
         st.stop()
-    
+
     usuario_id = st.session_state.get("usuario_id")
-    
-    # ✅ ADMIN TEM TUDO
-    if usuario_id == 1:
+
+    # Admin tem acesso total (verificação por papel, não por ID)
+    if usuario_tem_papel(usuario_id, "admin"):
         return
-    
+
     if not usuario_tem_permissao(usuario_id, modulo, acao):
         st.error(f"❌ Você não tem permissão para: {acao} em {modulo}")
         st.info("💡 Entre em contato com o administrador se precisar desta permissão")
@@ -454,16 +453,15 @@ def verificar_permissao(modulo: str, acao: str) -> bool:
     Verifica se o usuário logado tem uma permissão.
     Não para a execução, apenas retorna True/False.
     """
-    # ✅ CORRIGIDO: Usa usuario_id ao invés de usuario_logado
     if not st.session_state.get("autenticado"):
         return False
-    
+
     usuario_id = st.session_state.get("usuario_id")
-    
-    # ✅ ADMIN TEM TUDO
-    if usuario_id == 1:
+
+    # Admin tem acesso total (verificação por papel, não por ID)
+    if usuario_tem_papel(usuario_id, "admin"):
         return True
-    
+
     return usuario_tem_permissao(usuario_id, modulo, acao)
 
 

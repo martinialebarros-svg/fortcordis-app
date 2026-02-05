@@ -385,7 +385,8 @@ try:
     from auth import (
         mostrar_tela_login,
         mostrar_info_usuario,
-        fazer_logout
+        fazer_logout,
+        verificar_timeout_sessao,
     )
     from rbac import (
         verificar_permissao,
@@ -945,7 +946,7 @@ def _parse_num(texto: str):
     num = m.group(1).replace(",", ".")
     try:
         return float(num)
-    except:
+    except (ValueError, TypeError):
         return None
 
 def extrair_peso_kg(soup):
@@ -1157,7 +1158,7 @@ if uploaded_xml:
         # mantém também o peso numérico para referências
         try:
             st.session_state["peso_atual"] = float(str(peso).replace(",", "."))
-        except:
+        except (ValueError, TypeError):
             st.session_state["peso_atual"] = 10.0
     
     
@@ -1206,7 +1207,7 @@ if uploaded_xml:
                         if node:
                             try:
                                 return float(node.get_text())
-                            except:
+                            except (ValueError, TypeError):
                                 pass
             return 0.0
 
@@ -1407,6 +1408,11 @@ for pasta in [PASTA_LAUDOS, PASTA_PRESCRICOES, PASTA_DOCUMENTOS]:
 # ============================================================================
 # CONTROLE DE ACESSO
 # ============================================================================
+
+# Verifica timeout de sessão (expira após 60 min de inatividade)
+if st.session_state.get("autenticado"):
+    if not verificar_timeout_sessao():
+        st.warning("Sua sessão expirou por inatividade. Faça login novamente.")
 
 # Se não estiver logado, mostra tela de login (ou cria primeiro usuário e entra)
 if not st.session_state.get("autenticado"):

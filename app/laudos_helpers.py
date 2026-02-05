@@ -15,6 +15,7 @@ import streamlit as st
 from app.config import DB_PATH
 from app.utils import _norm_key
 from app.laudos_refs import calcular_referencia_tabela
+from app.sql_safe import validar_tabela
 
 # Constantes para editor de frases
 QUALI_DET = {
@@ -460,9 +461,10 @@ def contar_laudos_do_banco():
         total = 0
         for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
             try:
-                cur.execute(f"SELECT COUNT(*) FROM {tabela}")
+                tab = validar_tabela(tabela)
+                cur.execute(f"SELECT COUNT(*) FROM {tab}")
                 total += cur.fetchone()[0]
-            except sqlite3.OperationalError:
+            except (sqlite3.OperationalError, ValueError):
                 pass
         conn.close()
         return total
@@ -477,19 +479,20 @@ def _backfill_nomes_laudos():
         cur = conn.cursor()
         for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
             try:
-                cur.execute(f"PRAGMA table_info({tabela})")
+                tab = validar_tabela(tabela)
+                cur.execute(f"PRAGMA table_info({tab})")
                 cols = [r[1] for r in cur.fetchall()]
                 if "nome_paciente" not in cols or "nome_clinica" not in cols or "nome_tutor" not in cols:
                     continue
-                cur.execute(f"""UPDATE {tabela} SET nome_paciente = (SELECT nome FROM pacientes WHERE pacientes.id = {tabela}.paciente_id)
+                cur.execute(f"""UPDATE {tab} SET nome_paciente = (SELECT nome FROM pacientes WHERE pacientes.id = {tab}.paciente_id)
                     WHERE (nome_paciente IS NULL OR TRIM(COALESCE(nome_paciente, '')) = '') AND paciente_id IS NOT NULL""")
-                cur.execute(f"""UPDATE {tabela} SET nome_clinica = COALESCE(
-                    (SELECT nome FROM clinicas WHERE clinicas.id = {tabela}.clinica_id),
-                    (SELECT nome FROM clinicas_parceiras WHERE clinicas_parceiras.id = {tabela}.clinica_id)
+                cur.execute(f"""UPDATE {tab} SET nome_clinica = COALESCE(
+                    (SELECT nome FROM clinicas WHERE clinicas.id = {tab}.clinica_id),
+                    (SELECT nome FROM clinicas_parceiras WHERE clinicas_parceiras.id = {tab}.clinica_id)
                     ) WHERE clinica_id IS NOT NULL AND (nome_clinica IS NULL OR TRIM(COALESCE(nome_clinica, '')) = '')""")
-                cur.execute(f"""UPDATE {tabela} SET nome_tutor = (SELECT t.nome FROM pacientes p JOIN tutores t ON t.id = p.tutor_id WHERE p.id = {tabela}.paciente_id)
+                cur.execute(f"""UPDATE {tab} SET nome_tutor = (SELECT t.nome FROM pacientes p JOIN tutores t ON t.id = p.tutor_id WHERE p.id = {tab}.paciente_id)
                     WHERE paciente_id IS NOT NULL AND (nome_tutor IS NULL OR TRIM(COALESCE(nome_tutor, '')) = '')""")
-            except sqlite3.OperationalError:
+            except (sqlite3.OperationalError, ValueError):
                 pass
         conn.commit()
         conn.close()
@@ -507,7 +510,8 @@ def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro
         out = []
         for tabela in ("laudos_ecocardiograma", "laudos_eletrocardiograma", "laudos_pressao_arterial"):
             try:
-                cur.execute(f"PRAGMA table_info({tabela})")
+                tab = validar_tabela(tabela)
+                cur.execute(f"PRAGMA table_info({tab})")
                 cols = [r[1] for r in cur.fetchall()]
                 col_arquivo = "arquivo_json" if "arquivo_json" in cols else "arquivo_xml"
                 sel_clinica = "COALESCE(c.nome, cp.nome, l.nome_clinica, '') AS clinica" if "nome_clinica" in cols else "COALESCE(c.nome, cp.nome, '') AS clinica"
@@ -517,7 +521,7 @@ def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro
                         COALESCE(NULLIF(TRIM(l.nome_paciente), ''), p.nome, '') AS animal,
                         l.data_exame AS data, {sel_clinica}, {sel_tutor},
                         l.{col_arquivo} AS arquivo_json, l.arquivo_pdf AS arquivo_pdf
-                    FROM {tabela} l
+                    FROM {tab} l
                     LEFT JOIN clinicas c ON l.clinica_id = c.id
                     LEFT JOIN clinicas_parceiras cp ON l.clinica_id = cp.id
                     LEFT JOIN pacientes p ON l.paciente_id = p.id
@@ -554,7 +558,7 @@ def listar_laudos_do_banco(tutor_filtro=None, clinica_filtro=None, animal_filtro
                     r["arquivo_json"] = r.get("arquivo_json") or ""
                     r["arquivo_pdf"] = r.get("arquivo_pdf") or ""
                     out.append(r)
-            except sqlite3.OperationalError:
+            except (sqlite3.OperationalError, ValueError):
                 continue
         conn.close()
         return out

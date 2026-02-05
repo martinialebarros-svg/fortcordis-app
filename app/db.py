@@ -2,6 +2,7 @@
 import logging
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 
@@ -9,8 +10,31 @@ import streamlit as st
 
 from app.config import DB_PATH
 from app.utils import nome_proprio_ptbr, _norm_key
+from app.sql_safe import validar_coluna
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def get_db():
+    """Context manager para conexão ao banco. Faz commit automático ou rollback em caso de erro.
+
+    Uso:
+        with get_db() as conn:
+            conn.execute("INSERT INTO ...", (...))
+    """
+    conn = sqlite3.connect(str(DB_PATH), timeout=15, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _db_conn_safe():
@@ -87,13 +111,15 @@ def _db_init():
         )""")
         for col, tipo in [("ativo", "INTEGER DEFAULT 1"), ("peso_kg", "REAL"), ("microchip", "TEXT"), ("observacoes", "TEXT")]:
             try:
-                conn.execute(f"ALTER TABLE pacientes ADD COLUMN {col} {tipo}")
-            except sqlite3.OperationalError:
+                c = validar_coluna(col)
+                conn.execute(f"ALTER TABLE pacientes ADD COLUMN {c} {tipo}")
+            except (sqlite3.OperationalError, ValueError):
                 pass
         for col, tipo in [("whatsapp", "TEXT"), ("ativo", "INTEGER DEFAULT 1")]:
             try:
-                conn.execute(f"ALTER TABLE tutores ADD COLUMN {col} {tipo}")
-            except sqlite3.OperationalError:
+                c = validar_coluna(col)
+                conn.execute(f"ALTER TABLE tutores ADD COLUMN {c} {tipo}")
+            except (sqlite3.OperationalError, ValueError):
                 pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS laudos_arquivos (
