@@ -272,8 +272,117 @@ def inicializar_banco():
         cols_cp = [r[1].lower() for r in cursor.fetchall()]
         if "tabela_preco_id" not in cols_cp:
             cursor.execute("ALTER TABLE clinicas_parceiras ADD COLUMN tabela_preco_id INTEGER REFERENCES tabelas_preco(id)")
+        for col, tipo in [("saldo_credito", "REAL DEFAULT 0"), ("limite_desconto_percentual", "REAL")]:
+            if col not in cols_cp:
+                try:
+                    cursor.execute(f"ALTER TABLE clinicas_parceiras ADD COLUMN {col} {tipo}")
+                except sqlite3.OperationalError:
+                    pass
     except sqlite3.OperationalError:
         pass
+
+    # ----- Gestão financeira estendida: movimentos caixa primeiro (referenciado por outros) -----
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS movimentos_caixa (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL CHECK(tipo IN ('entrada', 'saida')),
+            valor REAL NOT NULL,
+            data_movimento TEXT NOT NULL,
+            forma_pagamento TEXT,
+            origem_tipo TEXT,
+            origem_id INTEGER,
+            descricao TEXT,
+            clinica_id INTEGER,
+            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (clinica_id) REFERENCES clinicas_parceiras(id)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS contas_a_pagar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            descricao TEXT NOT NULL,
+            valor REAL NOT NULL,
+            data_vencimento TEXT NOT NULL,
+            data_pagamento TEXT,
+            status TEXT CHECK(status IN ('pendente', 'pago', 'cancelado')) DEFAULT 'pendente',
+            categoria TEXT CHECK(categoria IN ('fornecedor', 'folha', 'insumo', 'outro')) DEFAULT 'outro',
+            fornecedor_nome TEXT,
+            forma_pagamento TEXT,
+            movimento_caixa_id INTEGER,
+            observacoes TEXT,
+            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (movimento_caixa_id) REFERENCES movimentos_caixa(id)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS nfse_arquivos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            clinica_id INTEGER NOT NULL,
+            numero_nfse TEXT,
+            arquivo_caminho TEXT,
+            arquivo_blob BLOB,
+            data_emissao TEXT,
+            valor REAL,
+            descricao TEXT,
+            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (clinica_id) REFERENCES clinicas_parceiras(id)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conciliacao_cartoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_fechamento TEXT NOT NULL,
+            bandeira TEXT,
+            valor_bruto REAL NOT NULL,
+            taxa_percentual REAL DEFAULT 0,
+            valor_liquido REAL,
+            movimento_caixa_id INTEGER,
+            observacoes TEXT,
+            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (movimento_caixa_id) REFERENCES movimentos_caixa(id)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS comissoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            colaborador_id INTEGER NOT NULL,
+            valor REAL NOT NULL,
+            periodo_ref TEXT NOT NULL,
+            origem_tipo TEXT,
+            origem_id INTEGER,
+            tipo TEXT CHECK(tipo IN ('percentual_os', 'fixo', 'outro')) DEFAULT 'outro',
+            observacoes TEXT,
+            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (colaborador_id) REFERENCES usuarios(id)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS devolucoes_venda (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            financeiro_id INTEGER NOT NULL,
+            valor_devolvido REAL NOT NULL,
+            data_devolucao TEXT NOT NULL,
+            motivo TEXT,
+            movimento_caixa_id INTEGER,
+            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (financeiro_id) REFERENCES financeiro(id),
+            FOREIGN KEY (movimento_caixa_id) REFERENCES movimentos_caixa(id)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS creditos_movimentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            clinica_id INTEGER NOT NULL,
+            valor REAL NOT NULL,
+            tipo TEXT NOT NULL CHECK(tipo IN ('credito', 'debito', 'ajuste')),
+            origem TEXT,
+            referencia_id INTEGER,
+            observacao TEXT,
+            data_movimento TEXT NOT NULL,
+            data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (clinica_id) REFERENCES clinicas_parceiras(id)
+        )
+    """)
     
     # Seed tabelas de preço e valores (uma vez)
     cursor.execute("SELECT COUNT(*) FROM tabelas_preco")
@@ -524,6 +633,13 @@ def calcular_valor_final(servico_id, clinica_id):
     """, (clinica_id, servico_id))
     
     desconto = cursor.fetchone()
+    # Limite de desconto da clínica (percentual máximo permitido)
+    try:
+        cursor.execute("SELECT limite_desconto_percentual FROM clinicas_parceiras WHERE id = ?", (clinica_id,))
+        row_lim = cursor.fetchone()
+        limite_pct = float(row_lim[0]) if row_lim and row_lim[0] is not None else None
+    except Exception:
+        limite_pct = None
     conn.close()
     
     if not desconto:
@@ -537,7 +653,12 @@ def calcular_valor_final(servico_id, clinica_id):
     else:  # valor_fixo
         desconto_aplicado = valor_desconto
         valor_final = valor_base - valor_desconto
-    
+    # Respeitar limite de desconto da clínica (percentual máximo sobre valor_base)
+    if limite_pct is not None and limite_pct < 100:
+        max_desconto = valor_base * (limite_pct / 100)
+        if desconto_aplicado > max_desconto:
+            desconto_aplicado = max_desconto
+            valor_final = valor_base - desconto_aplicado
     return (valor_base, desconto_aplicado, max(valor_final, 0.0))
 
 def registrar_cobranca_automatica(agendamento_id, clinica_id, servicos_ids):
@@ -583,9 +704,100 @@ def registrar_cobranca_automatica(agendamento_id, clinica_id, servicos_ids):
     return numero_os
 
 
+def garantir_tabelas_financeiro_extras():
+    """Cria tabelas de gestão financeira estendida se não existirem (contas a pagar, caixa, NFS-e, etc.)."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='movimentos_caixa'")
+        if cursor.fetchone() is None:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS movimentos_caixa (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tipo TEXT NOT NULL CHECK(tipo IN ('entrada', 'saida')),
+                    valor REAL NOT NULL,
+                    data_movimento TEXT NOT NULL,
+                    forma_pagamento TEXT,
+                    origem_tipo TEXT,
+                    origem_id INTEGER,
+                    descricao TEXT,
+                    clinica_id INTEGER,
+                    data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (clinica_id) REFERENCES clinicas_parceiras(id)
+                )
+            """)
+        for tbl, sql in [
+            ("contas_a_pagar", """CREATE TABLE IF NOT EXISTS contas_a_pagar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, descricao TEXT NOT NULL, valor REAL NOT NULL,
+                data_vencimento TEXT NOT NULL, data_pagamento TEXT, status TEXT DEFAULT 'pendente',
+                categoria TEXT DEFAULT 'outro', fornecedor_nome TEXT, forma_pagamento TEXT,
+                movimento_caixa_id INTEGER, observacoes TEXT, data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
+            )"""),
+            ("nfse_arquivos", """CREATE TABLE IF NOT EXISTS nfse_arquivos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, clinica_id INTEGER NOT NULL, numero_nfse TEXT,
+                arquivo_caminho TEXT, arquivo_blob BLOB, data_emissao TEXT, valor REAL, descricao TEXT,
+                data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (clinica_id) REFERENCES clinicas_parceiras(id)
+            )"""),
+            ("conciliacao_cartoes", """CREATE TABLE IF NOT EXISTS conciliacao_cartoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, data_fechamento TEXT NOT NULL, bandeira TEXT,
+                valor_bruto REAL NOT NULL, taxa_percentual REAL DEFAULT 0, valor_liquido REAL,
+                movimento_caixa_id INTEGER, observacoes TEXT, data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
+            )"""),
+            ("comissoes", """CREATE TABLE IF NOT EXISTS comissoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, colaborador_id INTEGER NOT NULL, valor REAL NOT NULL,
+                periodo_ref TEXT NOT NULL, origem_tipo TEXT, origem_id INTEGER, tipo TEXT DEFAULT 'outro',
+                observacoes TEXT, data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (colaborador_id) REFERENCES usuarios(id)
+            )"""),
+            ("devolucoes_venda", """CREATE TABLE IF NOT EXISTS devolucoes_venda (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, financeiro_id INTEGER NOT NULL, valor_devolvido REAL NOT NULL,
+                data_devolucao TEXT NOT NULL, motivo TEXT, movimento_caixa_id INTEGER,
+                data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (financeiro_id) REFERENCES financeiro(id)
+            )"""),
+            ("creditos_movimentos", """CREATE TABLE IF NOT EXISTS creditos_movimentos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, clinica_id INTEGER NOT NULL, valor REAL NOT NULL,
+                tipo TEXT NOT NULL, origem TEXT, referencia_id INTEGER, observacao TEXT, data_movimento TEXT NOT NULL,
+                data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (clinica_id) REFERENCES clinicas_parceiras(id)
+            )"""),
+        ]:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,))
+            if cursor.fetchone() is None:
+                cursor.execute(sql)
+        cursor.execute("PRAGMA table_info(clinicas_parceiras)")
+        cols_cp = [r[1].lower() for r in cursor.fetchall()]
+        for col, tipo in [("saldo_credito", "REAL DEFAULT 0"), ("limite_desconto_percentual", "REAL")]:
+            if col not in cols_cp:
+                try:
+                    cursor.execute(f"ALTER TABLE clinicas_parceiras ADD COLUMN {col} {tipo}")
+                except sqlite3.OperationalError:
+                    pass
+    finally:
+        conn.commit()
+        conn.close()
+
+
+def _inserir_movimento_caixa(tipo, valor, data_movimento, forma_pagamento=None, origem_tipo=None, origem_id=None, descricao=None, clinica_id=None):
+    """Insere movimento de caixa. Retorna id do movimento ou None."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO movimentos_caixa (tipo, valor, data_movimento, forma_pagamento, origem_tipo, origem_id, descricao, clinica_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (tipo, valor, data_movimento or datetime.now().strftime("%Y-%m-%d"), forma_pagamento, origem_tipo, origem_id, descricao, clinica_id))
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.OperationalError:
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+
 def dar_baixa_os(financeiro_id, data_pagamento=None, forma_pagamento=None):
     """
     Marca uma OS como paga (dar baixa no pagamento).
+    Registra automaticamente entrada em movimentos_caixa (integração financeira).
     data_pagamento: str YYYY-MM-DD ou None para hoje.
     forma_pagamento: str (ex: 'PIX', 'Transferência', 'Dinheiro', 'Cartão').
     Retorna True se atualizou, False se não encontrou ou já estava paga.
@@ -593,6 +805,12 @@ def dar_baixa_os(financeiro_id, data_pagamento=None, forma_pagamento=None):
     garantir_colunas_financeiro()
     conn = get_conn()
     cursor = conn.cursor()
+    cursor.execute("SELECT valor_final, clinica_id, numero_os, descricao FROM financeiro WHERE id = ? AND (status_pagamento IS NULL OR status_pagamento = 'pendente')", (financeiro_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+    valor_final, clinica_id, numero_os, descricao = float(row[0] or 0), row[1], row[2], row[3]
     data_pag = data_pagamento or datetime.now().strftime("%Y-%m-%d")
     forma = forma_pagamento or "Não informado"
     cursor.execute("""
@@ -603,6 +821,17 @@ def dar_baixa_os(financeiro_id, data_pagamento=None, forma_pagamento=None):
     ok = cursor.rowcount > 0
     conn.commit()
     conn.close()
+    if ok and valor_final > 0:
+        _inserir_movimento_caixa(
+            tipo="entrada",
+            valor=valor_final,
+            data_movimento=data_pag,
+            forma_pagamento=forma,
+            origem_tipo="receita_os",
+            origem_id=financeiro_id,
+            descricao=f"OS {numero_os or financeiro_id}: {descricao or 'Receita'}",
+            clinica_id=clinica_id,
+        )
     return ok
 
 
@@ -678,6 +907,315 @@ def listar_financeiro_pendentes():
         out = []
     conn.close()
     return out
+
+
+# ----- Contas a pagar -----
+def listar_contas_a_pagar(status=None, data_vencimento_inicio=None, data_vencimento_fim=None):
+    """Lista contas a pagar com filtros opcionais. Retorna lista de dict."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    q = "SELECT * FROM contas_a_pagar WHERE 1=1"
+    params = []
+    if status:
+        q += " AND status = ?"
+        params.append(status)
+    if data_vencimento_inicio:
+        q += " AND date(data_vencimento) >= date(?)"
+        params.append(data_vencimento_inicio)
+    if data_vencimento_fim:
+        q += " AND date(data_vencimento) <= date(?)"
+        params.append(data_vencimento_fim)
+    q += " ORDER BY data_vencimento"
+    cursor.execute(q, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def inserir_conta_pagar(descricao, valor, data_vencimento, categoria="outro", fornecedor_nome=None, observacoes=None):
+    """Insere conta a pagar. Retorna id ou None."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO contas_a_pagar (descricao, valor, data_vencimento, status, categoria, fornecedor_nome, observacoes)
+            VALUES (?, ?, ?, 'pendente', ?, ?, ?)
+        """, (descricao, valor, data_vencimento, categoria, fornecedor_nome or "", observacoes or ""))
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.OperationalError:
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+
+def dar_baixa_conta_pagar(conta_id, data_pagamento=None, forma_pagamento=None):
+    """Marca conta a pagar como paga e registra saída em movimentos_caixa. Retorna True se ok."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT valor, descricao FROM contas_a_pagar WHERE id = ? AND status = 'pendente'", (conta_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+    valor, descricao = float(row[0]), row[1]
+    data_pag = data_pagamento or datetime.now().strftime("%Y-%m-%d")
+    forma = forma_pagamento or "Não informado"
+    mov_id = _inserir_movimento_caixa("saida", valor, data_pag, forma, "despesa", conta_id, f"Conta a pagar: {descricao}", None)
+    cursor.execute("""
+        UPDATE contas_a_pagar SET status = 'pago', data_pagamento = ?, forma_pagamento = ?, movimento_caixa_id = ?
+        WHERE id = ? AND status = 'pendente'
+    """, (data_pag, forma, mov_id, conta_id))
+    ok = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return ok
+
+
+# ----- Movimentos de caixa -----
+def listar_movimentos_caixa(data_inicio=None, data_fim=None, tipo=None):
+    """Lista movimentos de caixa no período. Retorna lista de dict."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    q = "SELECT m.*, c.nome as clinica_nome FROM movimentos_caixa m LEFT JOIN clinicas_parceiras c ON m.clinica_id = c.id WHERE 1=1"
+    params = []
+    if data_inicio:
+        q += " AND date(m.data_movimento) >= date(?)"
+        params.append(data_inicio)
+    if data_fim:
+        q += " AND date(m.data_movimento) <= date(?)"
+        params.append(data_fim)
+    if tipo:
+        q += " AND m.tipo = ?"
+        params.append(tipo)
+    q += " ORDER BY m.data_movimento DESC, m.id DESC"
+    cursor.execute(q, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def inserir_movimento_caixa_manual(tipo, valor, data_movimento, descricao=None, forma_pagamento=None):
+    """Insere movimento de caixa manual (entrada ou saída avulsa). Retorna id ou None."""
+    return _inserir_movimento_caixa(tipo, valor, data_movimento, forma_pagamento, "manual", None, descricao, None)
+
+
+# ----- NFS-e (armazenamento vinculado à clínica) -----
+def inserir_nfse(clinica_id, numero_nfse=None, arquivo_caminho=None, arquivo_blob=None, data_emissao=None, valor=None, descricao=None):
+    """Registra NFS-e vinculada à clínica. Retorna id ou None."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO nfse_arquivos (clinica_id, numero_nfse, arquivo_caminho, arquivo_blob, data_emissao, valor, descricao)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (clinica_id, numero_nfse or "", arquivo_caminho or "", arquivo_blob, data_emissao or "", valor, descricao or ""))
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.OperationalError:
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+
+def listar_nfse_por_clinica(clinica_id=None):
+    """Lista NFS-e; se clinica_id informado, filtra por clínica."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    if clinica_id:
+        cursor.execute("""
+            SELECT n.*, c.nome as clinica_nome FROM nfse_arquivos n
+            JOIN clinicas_parceiras c ON n.clinica_id = c.id WHERE n.clinica_id = ?
+            ORDER BY n.data_emissao DESC, n.id DESC
+        """, (clinica_id,))
+    else:
+        cursor.execute("""
+            SELECT n.*, c.nome as clinica_nome FROM nfse_arquivos n
+            JOIN clinicas_parceiras c ON n.clinica_id = c.id
+            ORDER BY n.data_emissao DESC, n.id DESC
+        """)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ----- Créditos de clientes (clínicas) -----
+def listar_conciliacao_cartoes(data_inicio=None, data_fim=None):
+    """Lista conciliações de cartões no período."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    q = "SELECT * FROM conciliacao_cartoes WHERE 1=1"
+    params = []
+    if data_inicio:
+        q += " AND date(data_fechamento) >= date(?)"
+        params.append(data_inicio)
+    if data_fim:
+        q += " AND date(data_fechamento) <= date(?)"
+        params.append(data_fim)
+    q += " ORDER BY data_fechamento DESC"
+    cursor.execute(q, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def inserir_conciliacao_cartao(data_fechamento, valor_bruto, bandeira=None, taxa_percentual=0, valor_liquido=None, observacoes=None):
+    """Registra conciliação de cartão. Cria movimento de caixa (entrada) com valor_liquido. Retorna id ou None."""
+    garantir_tabelas_financeiro_extras()
+    vlq = valor_liquido if valor_liquido is not None else valor_bruto * (1 - taxa_percentual / 100)
+    mov_id = _inserir_movimento_caixa("entrada", vlq, data_fechamento, "Cartão", "conciliacao_cartao", None, f"Conciliação {bandeira or 'Cartão'}", None)
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO conciliacao_cartoes (data_fechamento, bandeira, valor_bruto, taxa_percentual, valor_liquido, movimento_caixa_id, observacoes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (data_fechamento, bandeira or "", valor_bruto, taxa_percentual, vlq, mov_id, observacoes or ""))
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.OperationalError:
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+
+def listar_comissoes(periodo_ref=None, colaborador_id=None):
+    """Lista comissões com filtros opcionais."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    q = "SELECT co.*, u.nome as colaborador_nome FROM comissoes co LEFT JOIN usuarios u ON co.colaborador_id = u.id WHERE 1=1"
+    params = []
+    if periodo_ref:
+        q += " AND co.periodo_ref = ?"
+        params.append(periodo_ref)
+    if colaborador_id:
+        q += " AND co.colaborador_id = ?"
+        params.append(colaborador_id)
+    q += " ORDER BY co.periodo_ref DESC, co.id DESC"
+    cursor.execute(q, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def inserir_comissao(colaborador_id, valor, periodo_ref, tipo="outro", origem_tipo=None, origem_id=None, observacoes=None):
+    """Registra comissão. Retorna id ou None."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO comissoes (colaborador_id, valor, periodo_ref, tipo, origem_tipo, origem_id, observacoes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (colaborador_id, valor, periodo_ref, tipo, origem_tipo, origem_id, observacoes or ""))
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.OperationalError:
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+
+def listar_devolucoes_venda(financeiro_id=None):
+    """Lista devoluções de venda; se financeiro_id informado, filtra por OS."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    if financeiro_id:
+        cursor.execute("""
+            SELECT d.*, f.numero_os, f.clinica_id FROM devolucoes_venda d
+            JOIN financeiro f ON d.financeiro_id = f.id WHERE d.financeiro_id = ?
+            ORDER BY d.data_devolucao DESC
+        """, (financeiro_id,))
+    else:
+        cursor.execute("""
+            SELECT d.*, f.numero_os, c.nome as clinica_nome FROM devolucoes_venda d
+            JOIN financeiro f ON d.financeiro_id = f.id
+            LEFT JOIN clinicas_parceiras c ON f.clinica_id = c.id
+            ORDER BY d.data_devolucao DESC
+        """)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def inserir_devolucao(financeiro_id, valor_devolvido, data_devolucao, motivo=None):
+    """Registra devolução de venda e cria saída em movimentos_caixa. Retorna id ou None."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT numero_os, descricao FROM financeiro WHERE id = ?", (financeiro_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+    numero_os, descricao = row[0], row[1]
+    mov_id = _inserir_movimento_caixa("saida", valor_devolvido, data_devolucao, "Devolução", "devolucao", financeiro_id, f"Devolução OS {numero_os}: {descricao or ''}", None)
+    try:
+        cursor.execute("""
+            INSERT INTO devolucoes_venda (financeiro_id, valor_devolvido, data_devolucao, motivo, movimento_caixa_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, (financeiro_id, valor_devolvido, data_devolucao, motivo or "", mov_id))
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.OperationalError:
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+
+def listar_creditos_movimentos(clinica_id=None):
+    """Lista movimentos de crédito por clínica."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    if clinica_id:
+        cursor.execute("SELECT cm.* FROM creditos_movimentos cm WHERE cm.clinica_id = ? ORDER BY cm.data_movimento DESC", (clinica_id,))
+    else:
+        cursor.execute("SELECT cm.*, c.nome as clinica_nome FROM creditos_movimentos cm JOIN clinicas_parceiras c ON cm.clinica_id = c.id ORDER BY cm.data_movimento DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def registrar_credito_clinica(clinica_id, valor, tipo="credito", origem=None, referencia_id=None, observacao=None):
+    """Registra movimento de crédito/debito na clínica e atualiza saldo_credito em clinicas_parceiras."""
+    garantir_tabelas_financeiro_extras()
+    conn = get_conn()
+    cursor = conn.cursor()
+    data_mov = datetime.now().strftime("%Y-%m-%d")
+    try:
+        cursor.execute("INSERT INTO creditos_movimentos (clinica_id, valor, tipo, origem, referencia_id, observacao, data_movimento) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                       (clinica_id, valor, tipo, origem or "", referencia_id, observacao or "", data_mov))
+        delta = valor if tipo == "credito" else -valor
+        cursor.execute("UPDATE clinicas_parceiras SET saldo_credito = COALESCE(saldo_credito, 0) + ? WHERE id = ?", (delta, clinica_id))
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.OperationalError:
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
 
 
 def atualizar_status_acompanhamentos():

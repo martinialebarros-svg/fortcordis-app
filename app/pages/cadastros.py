@@ -8,6 +8,7 @@ import streamlit as st
 
 from app.components import tabela_tabular
 from app.config import DB_PATH
+from fortcordis_modules.database import garantir_tabelas_financeiro_extras
 from modules.rbac import verificar_permissao
 
 
@@ -17,6 +18,7 @@ def render_cadastros():
     tab_c1, tab_c2 = st.tabs(["🏥 Clínicas Parceiras", "🛠️ Serviços"])
     
     with tab_c1:
+        garantir_tabelas_financeiro_extras()
         st.subheader("Clínicas Parceiras")
         
         # ⚠️ PROTEÇÃO: Só quem pode criar vê o formulário
@@ -167,7 +169,24 @@ def render_cadastros():
                                     )
                                 else:
                                     edit_tabela_id = current_tabela
-                                
+                                edit_limite_desc = st.number_input(
+                                    "Limite de desconto (%)",
+                                    value=float(dados.get("limite_desconto_percentual") or 0),
+                                    min_value=0.0,
+                                    max_value=100.0,
+                                    step=0.5,
+                                    key=f"edit_limite_desc_{clinica_id}",
+                                    help="Percentual máximo de desconto permitido para esta clínica."
+                                )
+                                edit_saldo_credito = st.number_input(
+                                    "Saldo de crédito (R$)",
+                                    value=float(dados.get("saldo_credito") or 0),
+                                    min_value=0.0,
+                                    step=1.0,
+                                    format="%.2f",
+                                    key=f"edit_saldo_credito_{clinica_id}",
+                                    help="Crédito disponível da clínica (controle de créditos)."
+                                )
                                 if st.form_submit_button("💾 Salvar Alterações", type="primary"):
                                     try:
                                         if nome_by_id:
@@ -175,19 +194,21 @@ def render_cadastros():
                                                 UPDATE clinicas_parceiras 
                                                 SET nome = ?, endereco = ?, cidade = ?, telefone = ?,
                                                     whatsapp = ?, cnpj = ?, responsavel_veterinario = ?,
-                                                    crmv_responsavel = ?, tabela_preco_id = ?
+                                                    crmv_responsavel = ?, tabela_preco_id = ?,
+                                                    limite_desconto_percentual = ?, saldo_credito = ?
                                                 WHERE id = ?
                                             """, (edit_nome, edit_end, edit_cidade, edit_tel, edit_whats,
-                                                edit_cnpj, edit_resp, edit_crmv, edit_tabela_id, clinica_id))
+                                                edit_cnpj, edit_resp, edit_crmv, edit_tabela_id, edit_limite_desc, edit_saldo_credito, clinica_id))
                                         else:
                                             cursor.execute("""
                                                 UPDATE clinicas_parceiras 
                                                 SET nome = ?, endereco = ?, cidade = ?, telefone = ?,
                                                     whatsapp = ?, cnpj = ?, responsavel_veterinario = ?,
-                                                    crmv_responsavel = ?
+                                                    crmv_responsavel = ?,
+                                                    limite_desconto_percentual = ?, saldo_credito = ?
                                                 WHERE id = ?
                                             """, (edit_nome, edit_end, edit_cidade, edit_tel, edit_whats,
-                                                edit_cnpj, edit_resp, edit_crmv, clinica_id))
+                                                edit_cnpj, edit_resp, edit_crmv, edit_limite_desc, edit_saldo_credito, clinica_id))
                                         conn.commit()
                                         st.success(f"✅ Clínica '{edit_nome}' atualizada com sucesso!")
                                         st.rerun()
