@@ -385,7 +385,8 @@ try:
     from auth import (
         mostrar_tela_login,
         mostrar_info_usuario,
-        fazer_logout
+        fazer_logout,
+        verificar_timeout_sessao,
     )
     from rbac import (
         verificar_permissao,
@@ -1407,6 +1408,11 @@ for pasta in [PASTA_LAUDOS, PASTA_PRESCRICOES, PASTA_DOCUMENTOS]:
 # ============================================================================
 # CONTROLE DE ACESSO
 # ============================================================================
+
+# Verifica timeout de sessão (expira após 60 min de inatividade)
+if st.session_state.get("autenticado"):
+    if not verificar_timeout_sessao():
+        st.warning("Sua sessão expirou por inatividade. Faça login novamente.")
 
 # Se não estiver logado, mostra tela de login (ou cria primeiro usuário e entra)
 if not st.session_state.get("autenticado"):

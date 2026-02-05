@@ -9,6 +9,7 @@ import streamlit as st
 
 from app.config import DB_PATH
 from app.utils import nome_proprio_ptbr, _norm_key
+from app.sql_safe import validar_coluna
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +88,15 @@ def _db_init():
         )""")
         for col, tipo in [("ativo", "INTEGER DEFAULT 1"), ("peso_kg", "REAL"), ("microchip", "TEXT"), ("observacoes", "TEXT")]:
             try:
-                conn.execute(f"ALTER TABLE pacientes ADD COLUMN {col} {tipo}")
-            except sqlite3.OperationalError:
+                c = validar_coluna(col)
+                conn.execute(f"ALTER TABLE pacientes ADD COLUMN {c} {tipo}")
+            except (sqlite3.OperationalError, ValueError):
                 pass
         for col, tipo in [("whatsapp", "TEXT"), ("ativo", "INTEGER DEFAULT 1")]:
             try:
-                conn.execute(f"ALTER TABLE tutores ADD COLUMN {col} {tipo}")
-            except sqlite3.OperationalError:
+                c = validar_coluna(col)
+                conn.execute(f"ALTER TABLE tutores ADD COLUMN {c} {tipo}")
+            except (sqlite3.OperationalError, ValueError):
                 pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS laudos_arquivos (

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
 from app.config import DB_PATH
+from app.sql_safe import validar_tabela
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ def salvar_laudo_no_banco(
         if not tabela:
             return None, f"Tipo inválido: {tipo_exame}"
 
+        tabela = validar_tabela(tabela)
         cursor.execute(f"PRAGMA table_info({tabela})")
         colunas_existentes = [col[1] for col in cursor.fetchall()]
 
@@ -228,13 +230,14 @@ def buscar_laudos(
         laudos = []
 
         for tabela in tabelas:
+            tab = validar_tabela(tabela)
             query = """
                 SELECT
                     id, tipo_exame, nome_paciente, especie, data_exame,
                     nome_clinica, arquivo_xml AS arquivo_json, arquivo_pdf
                 FROM {tabela}
                 WHERE 1=1
-            """.format(tabela=tabela)
+            """.format(tabela=tab)
             params = []
 
             if nome_paciente:
@@ -294,7 +297,10 @@ def atualizar_laudo_editado(laudo_id, tipo_exame, caminho_json, dados_atualizado
             }
 
             tabela = tabelas.get(tipo_exame.lower())
+            if not tabela:
+                return False, f"Tipo de exame inválido: {tipo_exame}"
 
+            tabela = validar_tabela(tabela)
             cursor.execute(f"""
                 UPDATE {tabela}
                 SET arquivo_pdf = ?, data_modificacao = CURRENT_TIMESTAMP

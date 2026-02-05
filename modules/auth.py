@@ -337,10 +337,44 @@ def autenticar(email: str, senha: str) -> Tuple[bool, Optional[Dict], str]:
         conn.close()
 
 
+SESSION_TIMEOUT_MINUTOS = 60  # Sessão expira após 60 minutos de inatividade
+
+
+def verificar_timeout_sessao() -> bool:
+    """
+    Verifica se a sessão expirou por inatividade.
+    Deve ser chamada a cada página carregada.
+    Retorna True se a sessão ainda é válida, False se expirou.
+    """
+    if not st.session_state.get("autenticado"):
+        return False
+
+    agora = datetime.now()
+    ultimo_acesso = st.session_state.get("ultimo_acesso_sessao")
+
+    if ultimo_acesso:
+        try:
+            ultimo = datetime.fromisoformat(ultimo_acesso)
+            if (agora - ultimo).total_seconds() > SESSION_TIMEOUT_MINUTOS * 60:
+                # Sessão expirou por inatividade
+                token = st.session_state.get("auth_token")
+                if token:
+                    invalidar_token_persistente(token)
+                remover_sessao_persistente()
+                st.session_state.clear()
+                return False
+        except (ValueError, TypeError):
+            pass
+
+    # Atualiza timestamp de último acesso
+    st.session_state["ultimo_acesso_sessao"] = agora.isoformat()
+    return True
+
+
 def obter_usuario_logado() -> Optional[Dict]:
     """
     Retorna os dados do usuário logado via Streamlit session_state.
-    
+
     Returns:
         Dicionário com dados do usuário ou None
     """
