@@ -698,20 +698,20 @@ def criar_usuario_admin_inicial():
 
 def mostrar_info_usuario():
     """
-    Exibe informações do usuário logado na sidebar.
+    Exibe informações do usuário logado na sidebar com botão de sair.
     """
-    usuario = obter_usuario_logado()
-    if not usuario:
+    if not st.session_state.get("autenticado"):
         return
-    
+
+    nome = st.session_state.get("usuario_nome", "")
+    email = st.session_state.get("usuario_email", "")
+
     st.sidebar.markdown("---")
-    st.sidebar.markdown(f"**👤 {usuario['nome']}**")
-    st.sidebar.caption(f"📧 {usuario['email']}")
-    
-    papeis = ", ".join([p["nome"].title() for p in usuario["papeis"]])
-    st.sidebar.caption(f"🎭 {papeis}")
-    
-    if st.sidebar.button("🚪 Sair", use_container_width=True):
+    st.sidebar.markdown(f"**👤 {nome}**")
+    if email:
+        st.sidebar.caption(f"📧 {email}")
+
+    if st.sidebar.button("🚪 Sair", use_container_width=True, key="btn_logout_sidebar"):
         fazer_logout()
 
 
