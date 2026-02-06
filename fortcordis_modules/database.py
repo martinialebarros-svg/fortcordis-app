@@ -594,13 +594,26 @@ def garantir_colunas_agendamentos():
 
 
 def gerar_numero_os():
-    """Gera número único de Ordem de Serviço"""
+    """Gera número único de Ordem de Serviço baseado no maior número existente."""
+    ano = datetime.now().year
+    prefixo = f"OS-{ano}-"
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM financeiro")
-    count = cursor.fetchone()[0]
+    # Busca o maior número sequencial do ano atual
+    cursor.execute(
+        "SELECT numero_os FROM financeiro WHERE numero_os LIKE ? ORDER BY id DESC LIMIT 1",
+        (f"{prefixo}%",),
+    )
+    row = cursor.fetchone()
     conn.close()
-    return f"OS-{datetime.now().year}-{(count + 1):05d}"
+    if row and row[0]:
+        try:
+            ultimo_seq = int(row[0].replace(prefixo, ""))
+        except (ValueError, TypeError):
+            ultimo_seq = 0
+    else:
+        ultimo_seq = 0
+    return f"{prefixo}{(ultimo_seq + 1):05d}"
 
 def calcular_valor_final(servico_id, clinica_id):
     """
