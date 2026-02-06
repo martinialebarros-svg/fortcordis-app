@@ -28,6 +28,7 @@ from app.laudos_helpers import (
     migrar_txt_para_det,
     obter_imagens_laudo_arquivo,
     obter_laudo_arquivo_por_id,
+    restaurar_laudo_para_pasta,
 )
 from modules.rbac import verificar_permissao
 
@@ -75,7 +76,10 @@ def render_laudos(deps=None):
     sb_grau_geral = st.session_state.get("sb_grau_geral", "Normal")
 
     st.title("🩺 Sistema de Laudos e Exames")
-    
+
+    if st.session_state.pop("__exame_carregado_ok", False):
+        st.success("Exame carregado com sucesso! Confira as abas Cadastro, Medidas, Qualitativa e Imagens.")
+
     # ============================================================================
     # INICIALIZAÇÃO DE VARIÁVEIS PADRÃO (evita erros de variáveis não definidas)
     # ============================================================================
@@ -775,16 +779,24 @@ def render_laudos(deps=None):
         # Imagens carregadas do exame arquivado (quando existirem)
         imgs_carregadas = st.session_state.get("imagens_carregadas", []) or []
         if imgs_carregadas:
-            st.caption("Imagens carregadas do exame arquivado:")
+            st.caption(f"Imagens carregadas do exame arquivado ({len(imgs_carregadas)}):")
             cols = st.columns(4)
             for idx, it in enumerate(imgs_carregadas):
                 b = it.get("bytes") if isinstance(it, dict) else None
-                if b:
-                    cols[idx % 4].image(b, use_container_width=True)
+                nome = it.get("name", f"imagem_{idx}") if isinstance(it, dict) else f"imagem_{idx}"
+                with cols[idx % 4]:
+                    if b:
+                        st.image(b, use_container_width=True)
+                    st.caption(nome)
+                    if st.button("🗑️", key=f"btn_rm_img_{idx}", help=f"Remover {nome}"):
+                        st.session_state["imagens_carregadas"] = [
+                            im for j, im in enumerate(imgs_carregadas) if j != idx
+                        ]
+                        st.rerun()
 
             cL, cR = st.columns([1, 3])
             with cL:
-                if st.button("🧹 Remover imagens carregadas", key="btn_limpar_imagens_carregadas"):
+                if st.button("🧹 Remover todas", key="btn_limpar_imagens_carregadas"):
                     st.session_state["imagens_carregadas"] = []
                     st.rerun()
 
@@ -1186,11 +1198,11 @@ def render_laudos(deps=None):
             row_arq = laudos_arq[idx_arq]
             blob_row = obter_laudo_arquivo_por_id(row_arq["id_laudo_arquivo"])
             if blob_row:
-                cj, cp, cl = st.columns(3)
+                cj, cp, cl, cr = st.columns(4)
                 with cj:
                     if blob_row.get("conteudo_json"):
                         st.download_button(
-                            "⬇️ Baixar JSON",
+                            "⬇️ JSON",
                             data=blob_row["conteudo_json"],
                             file_name=(blob_row.get("nome_base") or "laudo") + ".json",
                             mime="application/json",
@@ -1201,7 +1213,7 @@ def render_laudos(deps=None):
                 with cp:
                     if blob_row.get("conteudo_pdf"):
                         st.download_button(
-                            "⬇️ Baixar PDF",
+                            "⬇️ PDF",
                             data=blob_row["conteudo_pdf"],
                             file_name=(blob_row.get("nome_base") or "laudo") + ".pdf",
                             mime="application/pdf",
@@ -1211,7 +1223,7 @@ def render_laudos(deps=None):
                         st.caption("PDF não armazenado.")
                 with cl:
                     if blob_row.get("conteudo_json"):
-                        if st.button("📥 Carregar JSON", key="btn_carregar_json_banco", help="Carrega dados e imagens do exame para edição nas abas Cadastro, Medidas, Imagens, etc."):
+                        if st.button("📥 Carregar para edição", key="btn_carregar_json_banco", help="Carrega dados e imagens do exame para edição nas abas Cadastro, Medidas, Imagens, etc."):
                             try:
                                 obj = json.loads(blob_row["conteudo_json"].decode("utf-8") if isinstance(blob_row["conteudo_json"], bytes) else blob_row["conteudo_json"])
                                 imagens = obter_imagens_laudo_arquivo(row_arq["id_laudo_arquivo"])
@@ -1225,6 +1237,13 @@ def render_laudos(deps=None):
                                 st.error(f"Erro ao carregar exame: {e}")
                     else:
                         st.caption("—")
+                with cr:
+                    if st.button("💾 Restaurar arquivos", key="btn_restaurar_pasta_banco", help="Salva JSON, PDF e imagens na pasta local"):
+                        ok, msg = restaurar_laudo_para_pasta(row_arq["id_laudo_arquivo"], str(PASTA_LAUDOS))
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
         else:
             if n_arq > 0:
                 st.warning("Nenhum exame com esses filtros. Limpe a busca para ver todos.")

@@ -682,8 +682,21 @@ def _aplicar_carregamento_exame_pendente():
         if not isinstance(obj, dict):
             st.error("JSON inválido (estrutura inesperada).")
             return
-        # carregamento por path não preenche imagens_carregadas (arquivos em disco)
-        st.session_state["imagens_carregadas"] = []
+        # carrega imagens do disco se listadas no JSON
+        imgs_loaded = []
+        lista_imgs = obj.get("imagens", [])
+        if isinstance(lista_imgs, list) and lista_imgs:
+            pasta_json = Path(arq).parent
+            for nome_img in lista_imgs:
+                if not isinstance(nome_img, str) or not nome_img.strip():
+                    continue
+                img_path = pasta_json / nome_img
+                if img_path.exists():
+                    try:
+                        imgs_loaded.append({"name": nome_img, "bytes": img_path.read_bytes()})
+                    except OSError:
+                        pass
+        st.session_state["imagens_carregadas"] = imgs_loaded
 
     pac = obj.get("paciente", {}) if isinstance(obj.get("paciente"), dict) else {}
     medidas = obj.get("medidas", {}) if isinstance(obj.get("medidas"), dict) else {}
