@@ -648,3 +648,49 @@ def obter_imagens_laudo_arquivo(laudo_arquivo_id):
         return [{"nome_arquivo": r[0] or f"imagem_{i}.jpg", "conteudo": r[1] or b""} for i, r in enumerate(rows)]
     except Exception:
         return []
+
+
+def restaurar_laudo_para_pasta(laudo_arquivo_id: int, pasta_destino: str) -> tuple[bool, str]:
+    """Restaura JSON, PDF e imagens de um laudo do banco para a pasta local.
+
+    Retorna (True, mensagem_sucesso) ou (False, mensagem_erro).
+    """
+    from pathlib import Path as _P
+    pasta = _P(pasta_destino)
+    pasta.mkdir(parents=True, exist_ok=True)
+
+    blob_row = obter_laudo_arquivo_por_id(laudo_arquivo_id)
+    if not blob_row:
+        return False, "Laudo não encontrado no banco."
+
+    nome_base = blob_row.get("nome_base") or f"laudo_{laudo_arquivo_id}"
+    arquivos_criados = []
+
+    # JSON
+    if blob_row.get("conteudo_json"):
+        json_path = pasta / f"{nome_base}.json"
+        raw = blob_row["conteudo_json"]
+        json_path.write_bytes(raw if isinstance(raw, bytes) else raw.encode("utf-8"))
+        arquivos_criados.append(json_path.name)
+
+    # PDF
+    if blob_row.get("conteudo_pdf"):
+        pdf_path = pasta / f"{nome_base}.pdf"
+        pdf_path.write_bytes(blob_row["conteudo_pdf"])
+        arquivos_criados.append(pdf_path.name)
+
+    # Imagens
+    imagens = obter_imagens_laudo_arquivo(laudo_arquivo_id)
+    for i, img in enumerate(imagens):
+        conteudo = img.get("conteudo") or b""
+        if not conteudo:
+            continue
+        nome_img = img.get("nome_arquivo") or f"{nome_base}__IMG_{i:02d}.jpg"
+        img_path = pasta / nome_img
+        img_path.write_bytes(conteudo)
+        arquivos_criados.append(nome_img)
+
+    if not arquivos_criados:
+        return False, "Laudo sem conteúdo (JSON, PDF e imagens vazios)."
+
+    return True, f"Restaurados {len(arquivos_criados)} arquivo(s) em {pasta}: {', '.join(arquivos_criados)}"

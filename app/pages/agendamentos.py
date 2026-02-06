@@ -1,4 +1,5 @@
 # Tela: Agendamentos
+import html as _html_mod
 import sqlite3
 from datetime import date, datetime, timedelta
 
@@ -312,48 +313,275 @@ def render_agendamentos():
                             st.rerun()
 
     with tab_calendario:
-        st.subheader("📅 Visão de Calendário")
-        col_mes1, col_mes2 = st.columns([3, 1])
-        with col_mes1:
-            mes_sel = st.date_input("Selecione o mês", value=date.today(), key="calendario_mes")
-        primeiro_dia = date(mes_sel.year, mes_sel.month, 1)
-        if mes_sel.month == 12:
-            ultimo_dia = date(mes_sel.year + 1, 1, 1) - timedelta(days=1)
+        _esc = _html_mod.escape
+        _MESES_PT = [
+            "", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+            "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+        ]
+        _DIAS_SEM = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+        _DIAS_SEM_FULL = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+        _STATUS_COR = {
+            "Agendado":   ("#e8f5e9", "#2e7d32", "#4caf50"),
+            "Confirmado": ("#e3f2fd", "#1565c0", "#2196f3"),
+            "Realizado":  ("#f3e5f5", "#6a1b9a", "#9c27b0"),
+            "Cancelado":  ("#fbe9e7", "#c62828", "#f44336"),
+        }
+        _STATUS_ICON = {"Agendado": "🟢", "Confirmado": "📲", "Realizado": "✅", "Cancelado": "❌"}
+
+        def _ev_html(agend, compact=True):
+            bg, fg, brd = _STATUS_COR.get(agend.get("status", ""), ("#f5f5f5", "#333", "#999"))
+            hora = _esc(agend.get("hora", ""))
+            pac = _esc(agend.get("paciente", ""))
+            srv = _esc(agend.get("servico", ""))
+            cli = _esc(agend.get("clinica", ""))
+            td = "text-decoration:line-through;" if agend.get("status") == "Cancelado" else ""
+            if compact:
+                return (
+                    f'<div style="font-size:11px;padding:2px 4px;margin:1px 0;border-radius:3px;'
+                    f'background:{bg};color:{fg};border-left:3px solid {brd};'
+                    f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{td}"'
+                    f' title="{hora} - {pac} ({srv})">'
+                    f'<b>{hora}</b> {pac}</div>'
+                )
+            return (
+                f'<div style="font-size:13px;padding:4px 8px;margin:2px 0;border-radius:4px;'
+                f'background:{bg};color:{fg};border-left:4px solid {brd};{td}">'
+                f'<b>{hora}</b> — {pac}'
+                f'<br><span style="font-size:11px;opacity:0.8">{srv} | {cli}</span></div>'
+            )
+
+        # --- Estado de navegação ---
+        if "cal_ref_date" not in st.session_state:
+            st.session_state["cal_ref_date"] = date.today()
+
+        modo_cal = st.radio("Exibição", ["Mês", "Semana", "Dia"], horizontal=True, key="cal_modo")
+
+        c_prev, c_label, c_next, c_today = st.columns([1, 6, 1, 1])
+        with c_prev:
+            if st.button("◀", key="cal_prev", use_container_width=True):
+                r = st.session_state["cal_ref_date"]
+                if modo_cal == "Mês":
+                    st.session_state["cal_ref_date"] = (r.replace(day=1) - timedelta(days=1)).replace(day=1)
+                elif modo_cal == "Semana":
+                    st.session_state["cal_ref_date"] = r - timedelta(days=7)
+                else:
+                    st.session_state["cal_ref_date"] = r - timedelta(days=1)
+                st.rerun()
+        with c_next:
+            if st.button("▶", key="cal_next", use_container_width=True):
+                r = st.session_state["cal_ref_date"]
+                if modo_cal == "Mês":
+                    if r.month == 12:
+                        st.session_state["cal_ref_date"] = date(r.year + 1, 1, 1)
+                    else:
+                        st.session_state["cal_ref_date"] = date(r.year, r.month + 1, 1)
+                elif modo_cal == "Semana":
+                    st.session_state["cal_ref_date"] = r + timedelta(days=7)
+                else:
+                    st.session_state["cal_ref_date"] = r + timedelta(days=1)
+                st.rerun()
+        with c_today:
+            if st.button("Hoje", key="cal_today", use_container_width=True):
+                st.session_state["cal_ref_date"] = date.today()
+                st.rerun()
+
+        ref = st.session_state["cal_ref_date"]
+
+        # --- Período e label ---
+        if modo_cal == "Mês":
+            label_periodo = f"{_MESES_PT[ref.month]} {ref.year}"
+            primeiro_dia = date(ref.year, ref.month, 1)
+            ultimo_dia = (date(ref.year + (ref.month // 12), ref.month % 12 + 1, 1) - timedelta(days=1))
+            grid_start = primeiro_dia - timedelta(days=primeiro_dia.weekday())
+            grid_end = ultimo_dia + timedelta(days=(6 - ultimo_dia.weekday()))
+            data_ini_query, data_fim_query = grid_start, grid_end
+        elif modo_cal == "Semana":
+            seg = ref - timedelta(days=ref.weekday())
+            dom = seg + timedelta(days=6)
+            label_periodo = f"{seg.strftime('%d/%m')} — {dom.strftime('%d/%m/%Y')}"
+            data_ini_query, data_fim_query = seg, dom
         else:
-            ultimo_dia = date(mes_sel.year, mes_sel.month + 1, 1) - timedelta(days=1)
-        agendamentos_mes = listar_agendamentos(data_inicio=str(primeiro_dia), data_fim=str(ultimo_dia))
-        agendamentos_por_dia = {}
-        for agend in agendamentos_mes:
-            data = agend['data']
-            if data not in agendamentos_por_dia:
-                agendamentos_por_dia[data] = []
-            agendamentos_por_dia[data].append(agend)
-        st.markdown("### Resumo do Mês")
-        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-        total_mes = len(agendamentos_mes)
-        agendados = len([a for a in agendamentos_mes if a['status'] == 'Agendado'])
-        realizados = len([a for a in agendamentos_mes if a['status'] == 'Realizado'])
-        cancelados = len([a for a in agendamentos_mes if a['status'] == 'Cancelado'])
-        col_stat1.metric("Total", total_mes)
-        col_stat2.metric("Agendados", agendados, delta=None)
-        col_stat3.metric("Realizados", realizados, delta=None)
-        col_stat4.metric("Cancelados", cancelados, delta=None)
+            label_periodo = f"{ref.strftime('%d/%m/%Y')} — {_DIAS_SEM_FULL[ref.weekday()]}"
+            data_ini_query, data_fim_query = ref, ref
+
+        with c_label:
+            st.markdown(f"### {label_periodo}")
+
+        # --- Buscar agendamentos do período ---
+        agendamentos_periodo = listar_agendamentos(
+            data_inicio=str(data_ini_query), data_fim=str(data_fim_query),
+        )
+        agend_por_dia = {}
+        for a in agendamentos_periodo:
+            agend_por_dia.setdefault(a["data"], []).append(a)
+        for d in agend_por_dia:
+            agend_por_dia[d].sort(key=lambda x: x.get("hora", ""))
+
+        # --- Métricas resumo ---
+        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+        mc1.metric("Total", len(agendamentos_periodo))
+        mc2.metric("🟢 Agendados", sum(1 for a in agendamentos_periodo if a["status"] == "Agendado"))
+        mc3.metric("📲 Confirmados", sum(1 for a in agendamentos_periodo if a["status"] == "Confirmado"))
+        mc4.metric("✅ Realizados", sum(1 for a in agendamentos_periodo if a["status"] == "Realizado"))
+        mc5.metric("❌ Cancelados", sum(1 for a in agendamentos_periodo if a["status"] == "Cancelado"))
+
         st.markdown("---")
-        st.markdown("### Agendamentos do Mês")
-        if not agendamentos_por_dia:
-            st.info("📭 Nenhum agendamento neste mês.")
+
+        # ===================== VISÃO MÊS =====================
+        if modo_cal == "Mês":
+            today_str = date.today().isoformat()
+            n_weeks = ((grid_end - grid_start).days + 1) // 7
+
+            html_parts = [
+                '<style>',
+                '.fcal{width:100%;border-collapse:collapse;table-layout:fixed}',
+                '.fcal th{background:#1a73e8;color:#fff;padding:6px 4px;text-align:center;font-size:13px}',
+                '.fcal td{border:1px solid #dadce0;height:105px;vertical-align:top;padding:3px 4px;overflow:hidden}',
+                '.fcal .td-today{background:#fff8e1}',
+                '.fcal .td-other{background:#f8f9fa}',
+                '.fcal .td-other .dn{color:#bbb}',
+                '.fcal .dn{font-weight:700;font-size:14px;margin-bottom:2px;color:#333}',
+                '.fcal .dn-today{background:#1a73e8;color:#fff;border-radius:50%;display:inline-block;width:24px;height:24px;text-align:center;line-height:24px}',
+                '.fcal .more{font-size:10px;color:#1a73e8;font-weight:500;cursor:default}',
+                '</style>',
+                '<table class="fcal"><thead><tr>',
+            ]
+            for ds in _DIAS_SEM:
+                html_parts.append(f'<th>{ds}</th>')
+            html_parts.append('</tr></thead><tbody>')
+
+            cur_day = grid_start
+            for _ in range(n_weeks):
+                html_parts.append('<tr>')
+                for __ in range(7):
+                    d_str = cur_day.isoformat()
+                    is_today = d_str == today_str
+                    is_other = cur_day.month != ref.month
+                    cls_list = []
+                    if is_today:
+                        cls_list.append("td-today")
+                    if is_other:
+                        cls_list.append("td-other")
+                    cls_attr = f' class="{" ".join(cls_list)}"' if cls_list else ""
+                    html_parts.append(f'<td{cls_attr}>')
+                    if is_today:
+                        html_parts.append(f'<div class="dn"><span class="dn-today">{cur_day.day}</span></div>')
+                    else:
+                        html_parts.append(f'<div class="dn">{cur_day.day}</div>')
+                    evts = agend_por_dia.get(d_str, [])
+                    max_show = 3
+                    for ev in evts[:max_show]:
+                        html_parts.append(_ev_html(ev, compact=True))
+                    if len(evts) > max_show:
+                        html_parts.append(f'<div class="more">+{len(evts) - max_show} mais</div>')
+                    html_parts.append('</td>')
+                    cur_day += timedelta(days=1)
+                html_parts.append('</tr>')
+            html_parts.append('</tbody></table>')
+            st.markdown("".join(html_parts), unsafe_allow_html=True)
+
+            # Detalhe do dia selecionado
+            st.markdown("---")
+            dia_det = st.date_input(
+                "Ver detalhes do dia",
+                value=ref,
+                key="cal_dia_detalhe",
+            )
+            dia_str = dia_det.isoformat()
+            evts_det = agend_por_dia.get(dia_str, [])
+            if evts_det:
+                st.markdown(f"**{len(evts_det)} agendamento(s) em {dia_det.strftime('%d/%m/%Y')}:**")
+                for a in evts_det:
+                    ico = _STATUS_ICON.get(a["status"], "⚪")
+                    st.write(
+                        f'{ico} **{a["hora"]}** — {a["paciente"]} | {a["servico"]} | '
+                        f'{a.get("clinica", "")} | Tutor: {a.get("tutor", "")}'
+                    )
+            else:
+                st.caption(f"Nenhum agendamento em {dia_det.strftime('%d/%m/%Y')}.")
+
+        # ===================== VISÃO SEMANA =====================
+        elif modo_cal == "Semana":
+            seg = ref - timedelta(days=ref.weekday())
+            today_str = date.today().isoformat()
+            html_parts = [
+                '<style>',
+                '.fweek{width:100%;border-collapse:collapse;table-layout:fixed}',
+                '.fweek th{background:#1a73e8;color:#fff;padding:8px 4px;text-align:center;font-size:12px}',
+                '.fweek th.wk-today{background:#ffd600;color:#333}',
+                '.fweek td{border:1px solid #dadce0;vertical-align:top;padding:4px;height:420px;overflow-y:auto}',
+                '.fweek td.wk-today{background:#fff8e1}',
+                '.fweek .wk-empty{color:#bbb;text-align:center;padding-top:30px;font-size:11px}',
+                '</style>',
+                '<table class="fweek"><thead><tr>',
+            ]
+            for i in range(7):
+                d = seg + timedelta(days=i)
+                is_today = d.isoformat() == today_str
+                cls = ' class="wk-today"' if is_today else ""
+                html_parts.append(f'<th{cls}>{_DIAS_SEM[i]}<br><b>{d.day}</b>/{d.month:02d}</th>')
+            html_parts.append('</tr></thead><tbody><tr>')
+            for i in range(7):
+                d = seg + timedelta(days=i)
+                d_str = d.isoformat()
+                is_today = d_str == today_str
+                cls = ' class="wk-today"' if is_today else ""
+                evts = agend_por_dia.get(d_str, [])
+                html_parts.append(f'<td{cls}>')
+                if not evts:
+                    html_parts.append('<div class="wk-empty">—</div>')
+                else:
+                    for ev in evts:
+                        html_parts.append(_ev_html(ev, compact=False))
+                html_parts.append('</td>')
+            html_parts.append('</tr></tbody></table>')
+            st.markdown("".join(html_parts), unsafe_allow_html=True)
+
+        # ===================== VISÃO DIA =====================
         else:
-            for data in sorted(agendamentos_por_dia.keys()):
-                agends_dia = agendamentos_por_dia[data]
+            d_str = ref.isoformat()
+            today_str = date.today().isoformat()
+            evts_dia = agend_por_dia.get(d_str, [])
+
+            # Agrupar por hora
+            evts_por_hora = {}
+            for ev in evts_dia:
                 try:
-                    data_obj = datetime.strptime(data, "%Y-%m-%d")
-                    data_fmt = data_obj.strftime("%d/%m/%Y - %A")
-                except Exception:
-                    data_fmt = data
-                with st.expander(f"📅 {data_fmt} - {len(agends_dia)} agendamento(s)"):
-                    for agend in agends_dia:
-                        status_icon = {"Agendado": "🟢", "Confirmado": "📲", "Realizado": "✅", "Cancelado": "❌"}
-                        st.write(f"{status_icon.get(agend['status'], '⚪')} **{agend['hora']}** - {agend['paciente']} ({agend['servico']})")
+                    h = int(ev.get("hora", "0").split(":")[0])
+                except (ValueError, IndexError):
+                    h = 0
+                evts_por_hora.setdefault(h, []).append(ev)
+
+            now_h = datetime.now().hour if d_str == today_str else -1
+
+            html_parts = [
+                '<style>',
+                '.fday{width:100%;border-collapse:collapse}',
+                '.fday td{border-bottom:1px solid #e8e8e8;padding:4px 8px;vertical-align:top}',
+                '.fday .dh{width:60px;color:#70757a;font-size:12px;text-align:right;padding-right:12px;font-weight:500}',
+                '.fday .ds{min-height:56px}',
+                '.fday .ds-now{background:#fff8e1}',
+                '.fday .ds-has{background:#f0f7ff}',
+                '</style>',
+                '<table class="fday">',
+            ]
+            for h in range(7, 21):
+                evts_h = evts_por_hora.get(h, [])
+                cls_list = []
+                if h == now_h:
+                    cls_list.append("ds-now")
+                elif evts_h:
+                    cls_list.append("ds-has")
+                cls = f' class="ds {" ".join(cls_list)}"' if cls_list else ' class="ds"'
+                html_parts.append(f'<tr><td class="dh">{h:02d}:00</td><td{cls}>')
+                for ev in evts_h:
+                    html_parts.append(_ev_html(ev, compact=False))
+                html_parts.append('</td></tr>')
+            html_parts.append('</table>')
+            st.markdown("".join(html_parts), unsafe_allow_html=True)
+
+            if not evts_dia:
+                st.info("Nenhum agendamento neste dia.")
 
     with tab_confirmar:
         st.subheader("📲 Confirmar agendamentos de amanhã (24h antes)")
