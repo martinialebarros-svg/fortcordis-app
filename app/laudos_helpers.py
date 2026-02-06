@@ -35,6 +35,9 @@ ROTULOS = {
 }
 
 ARQUIVO_FRASES = str(Path.home() / "FortCordis" / "frases_personalizadas.json")
+# Arquivo seed commitado no repositório (sobrevive a reboots no Streamlit Cloud)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+ARQUIVO_FRASES_REPO = str(_REPO_ROOT / "data" / "frases_personalizadas.json")
 
 
 def garantir_schema_det_frase(entry: dict) -> dict:
@@ -432,18 +435,54 @@ def montar_qualitativa():
 
 
 def carregar_frases(arquivo_frases: str, frases_default: dict) -> dict[str, Any]:
-    """Carrega frases do JSON; usa frases_default como base e merge do arquivo."""
-    if not os.path.exists(arquivo_frases):
-        Path(arquivo_frases).parent.mkdir(parents=True, exist_ok=True)
-        with open(arquivo_frases, "w", encoding="utf-8") as f:
-            json.dump(frases_default, f, indent=4, ensure_ascii=False)
-        base = copy.deepcopy(frases_default)
-    else:
+    """Carrega frases do JSON.
+
+    Prioridade:
+    1. arquivo_frases (~/FortCordis/frases_personalizadas.json) — runtime
+    2. ARQUIVO_FRASES_REPO (data/frases_personalizadas.json) — commitado no repo
+    3. frases_default — hardcoded no código
+
+    No Streamlit Cloud, o diretório ~/FortCordis/ é efêmero e se perde a cada
+    reboot. O arquivo do repo garante que as frases personalizadas sobrevivam.
+    """
+    # --- Tentar carregar do arquivo runtime (~/FortCordis/) ---
+    if os.path.exists(arquivo_frases):
         try:
             with open(arquivo_frases, "r", encoding="utf-8") as f:
                 base = {**frases_default, **json.load(f)}
         except Exception:
-            base = copy.deepcopy(frases_default)
+            base = None
+        if base is not None:
+            for k in list(base.keys()):
+                entry = base[k]
+                entry = garantir_schema_det_frase(entry)
+                entry = migrar_txt_para_det(entry)
+                entry["layout"] = inferir_layout(entry, k)
+                base[k] = entry
+            return base
+
+    # --- Arquivo runtime não existe (reboot). Tentar seed do repositório ---
+    seed_repo = None
+    if os.path.exists(ARQUIVO_FRASES_REPO):
+        try:
+            with open(ARQUIVO_FRASES_REPO, "r", encoding="utf-8") as f:
+                seed_repo = json.load(f)
+        except Exception:
+            seed_repo = None
+
+    if seed_repo:
+        base = {**frases_default, **seed_repo}
+    else:
+        base = copy.deepcopy(frases_default)
+
+    # Salvar no caminho runtime para uso durante a sessão
+    try:
+        Path(arquivo_frases).parent.mkdir(parents=True, exist_ok=True)
+        with open(arquivo_frases, "w", encoding="utf-8") as f:
+            json.dump(base, f, indent=4, ensure_ascii=False)
+    except Exception:
+        pass
+
     for k in list(base.keys()):
         entry = base[k]
         entry = garantir_schema_det_frase(entry)

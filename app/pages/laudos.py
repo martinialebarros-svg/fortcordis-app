@@ -17,6 +17,7 @@ from app.config import DB_PATH, formatar_data_br
 from app.db import _db_init
 from app.laudos_helpers import (
     ARQUIVO_FRASES,
+    ARQUIVO_FRASES_REPO,
     QUALI_DET,
     contar_laudos_arquivos_do_banco,
     contar_laudos_do_banco,
@@ -31,6 +32,17 @@ from app.laudos_helpers import (
     restaurar_laudo_para_pasta,
 )
 from modules.rbac import verificar_permissao
+
+
+def _salvar_frases_json(db: dict) -> None:
+    """Salva frases no arquivo runtime E no arquivo do repositório (para sobreviver reboots)."""
+    for caminho in (ARQUIVO_FRASES, ARQUIVO_FRASES_REPO):
+        try:
+            Path(caminho).parent.mkdir(parents=True, exist_ok=True)
+            with open(caminho, "w", encoding="utf-8") as f:
+                json.dump(db, f, indent=4, ensure_ascii=False)
+        except Exception:
+            pass
 
 
 def render_laudos(deps=None):
@@ -987,8 +999,7 @@ def render_laudos(deps=None):
                             st.warning("Essa patologia já existe.")
                         else:
                             db[nova] = _criar_entry_vazia(layout_novo)
-                            with open(ARQUIVO_FRASES, "w", encoding="utf-8") as f:
-                                json.dump(db, f, indent=4, ensure_ascii=False)
+                            _salvar_frases_json(db)
                             st.session_state["db_frases"] = db
                             st.success("Adicionada e salva.")
                             st.rerun()
@@ -999,8 +1010,7 @@ def render_laudos(deps=None):
                             if chave not in db:
                                 db[chave] = _criar_entry_vazia(layout_novo)
                                 criadas += 1
-                        with open(ARQUIVO_FRASES, "w", encoding="utf-8") as f:
-                            json.dump(db, f, indent=4, ensure_ascii=False)
+                        _salvar_frases_json(db)
                         st.session_state["db_frases"] = db
                         st.success(f"Criadas {criadas} variações e salvo no JSON.")
                         st.rerun()
@@ -1008,8 +1018,7 @@ def render_laudos(deps=None):
             st.divider()
 
             if st.button("💾 Salvar frases", use_container_width=True):
-                with open(ARQUIVO_FRASES, "w", encoding="utf-8") as f:
-                    json.dump(db, f, indent=4, ensure_ascii=False)
+                _salvar_frases_json(db)
                 st.session_state["db_frases"] = db
                 st.success("Salvo no arquivo frases_personalizadas.json.")
                 st.rerun()
@@ -1019,8 +1028,7 @@ def render_laudos(deps=None):
             if st.button("🗑️ Excluir patologia selecionada", use_container_width=True):
                 if chave_sel in db:
                     del db[chave_sel]
-                    with open(ARQUIVO_FRASES, "w", encoding="utf-8") as f:
-                        json.dump(db, f, indent=4, ensure_ascii=False)
+                    _salvar_frases_json(db)
                     st.session_state["db_frases"] = db
                     st.success("Excluída.")
                     st.rerun()
