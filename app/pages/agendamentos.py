@@ -122,7 +122,7 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
 
 
 def _criar_os_unica_com_servicos(agendamento_id, servicos_selecionados, servicos_db, tabela_preco_id):
-    """Cria uma única OS com todos os serviços selecionados."""
+    """Cria uma única OS com o serviço original do agendamento + serviços extras."""
     from fortcordis_modules.database import (
         buscar_agendamento_por_id,
         garantir_colunas_financeiro,
@@ -163,9 +163,26 @@ def _criar_os_unica_com_servicos(agendamento_id, servicos_selecionados, servicos
         data_atend = agend.get("data") or agend.get("data_agendamento")
         data_comp = str(data_atend)[:10] if data_atend else datetime.now().strftime("%Y-%m-%d")
 
-        # Calcular total e criar descrição com todos os serviços
-        total = 0
+        # Coletar todos os serviços (original + extras)
+        todos_servicos = []
         servicos_formatados = []
+        total = 0
+
+        # 1. Adicionar serviço original do agendamento
+        servico_original = (agend.get("servico") or "").strip()
+        if servico_original:
+            # Buscar o serviço no banco
+            cursor.execute("SELECT id, valor_base FROM servicos WHERE (ativo = 1 OR ativo IS NULL) AND (nome = ? OR nome LIKE ?) LIMIT 1", (servico_original, f"%{servico_original}%"))
+            row_serv = cursor.fetchone()
+            if row_serv:
+                servico_id, valor_base = row_serv[0], float(row_serv[1] or 0)
+                # Buscar valor da tabela de preços
+                cursor.execute("SELECT valor FROM servico_preco WHERE servico_id = ? AND tabela_preco_id = ?", (servico_id, tabela_preco_id))
+                row_preco = cursor.fetchone()
+                valor = float(row_preco[0]) if row_preco else valor_base
+                todos_servicos.append((servico_original, valor))
+
+        # 2. Adicionar serviços extras selecionados
         for opt in servicos_selecionados:
             nome_servico = opt.split(" (R$")[0]
             if nome_servico in servicos_db:
@@ -174,8 +191,12 @@ def _criar_os_unica_com_servicos(agendamento_id, servicos_selecionados, servicos
                 cursor.execute("SELECT valor FROM servico_preco WHERE servico_id = ? AND tabela_preco_id = ?", (servico_info["id"], tabela_preco_id))
                 row_preco = cursor.fetchone()
                 valor = float(row_preco[0]) if row_preco else servico_info["valor_base"]
-                total += valor
-                servicos_formatados.append(f"{nome_servico} (R$ {valor:,.2f})")
+                todos_servicos.append((nome_servico, valor))
+
+        # Formatar para descrição
+        for nome, valor in todos_servicos:
+            servicos_formatados.append(f"{nome} (R$ {valor:,.2f})")
+            total += valor
 
         if not servicos_formatados:
             conn.close()
