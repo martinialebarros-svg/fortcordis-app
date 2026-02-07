@@ -475,7 +475,7 @@ def render_agendamentos():
                                 with col_b1:
                                     btn_realizado = st.form_submit_button("✅ Marcar Realizado", type="primary")
                                 with col_b2:
-                                    chk_servicos_extras = st.form_checkbox(
+                                    chk_servicos_extras = st.checkbox(
                                         "Adicionar mais serviços?",
                                         key=f"chk_servicos_extras_{agend['id']}"
                                     )
