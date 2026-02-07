@@ -45,6 +45,27 @@ def _salvar_frases_json(db: dict) -> None:
             pass
 
 
+def _buscar_servicos_disponiveis(conn, clinica_id):
+    """Busca todos os serviços ativos disponíveis para a clínica."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, nome, valor_base
+        FROM servicos
+        WHERE ativo = 1 OR ativo IS NULL
+        ORDER BY nome
+    """)
+    cols = [desc[0] for desc in cursor.description]
+    return [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+
+def _get_tabela_preco_id(conn, clinica_id):
+    """Busca o ID da tabela de preço da clínica."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT tabela_preco_id FROM clinicas_parceiras WHERE id = ?", (clinica_id,))
+    result = cursor.fetchone()
+    return result[0] if result else None
+
+
 def render_laudos(deps=None):
     """
     Renderiza a página Laudos e Exames.
@@ -82,26 +103,6 @@ def render_laudos(deps=None):
     especie_is_felina = deps.especie_is_felina
     calcular_valor_final = deps.calcular_valor_final
     gerar_numero_os = deps.gerar_numero_os
-
-
-def _buscar_servicos_disponiveis(conn, clinica_id):
-    """Busca todos os serviços ativos disponíveis para a clínica."""
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, nome, valor_base
-        FROM servicos
-        WHERE ativo = 1 OR ativo IS NULL
-        ORDER BY nome
-    """)
-    return cursor.fetchall()
-
-
-def _get_tabela_preco_id(conn, clinica_id):
-    """Busca o ID da tabela de preço da clínica."""
-    cursor = conn.cursor()
-    cursor.execute("SELECT tabela_preco_id FROM clinicas_parceiras WHERE id = ?", (clinica_id,))
-    result = cursor.fetchone()
-    return result[0] if result else None
 
     sb_patologia = st.session_state.get("sb_patologia", "Normal")
     sb_grau_refluxo = st.session_state.get("sb_grau_refluxo", "Leve")
@@ -2277,9 +2278,10 @@ def _get_tabela_preco_id(conn, clinica_id):
                         submit_cancelar = st.form_submit_button("❌ Cancelar")
 
                     if submit_confirmar:
-                        # Salvar serviços selecionados no session_state
+                        # Salvar serviços selecionados e disparar geração do PDF
                         st.session_state["servicos_selecionados"] = servicos_selecionados
                         st.session_state["modal_servicos_open"] = False
+                        st.session_state["pdf_gerando"] = True
                         st.rerun()
 
                     if submit_cancelar:
@@ -2302,12 +2304,12 @@ def _get_tabela_preco_id(conn, clinica_id):
                 if gerar_clicado:
                     st.session_state["chk_adicionar_servicos"] = adicionar_servicos
                     if adicionar_servicos:
-                        # Abrir modal de seleção de serviços
+                        # Abrir modal de seleção de serviços (ainda NÃO gera PDF)
                         st.session_state["modal_servicos_open"] = True
                     else:
                         # Gerar apenas com Ecocardiograma (comportamento original)
                         st.session_state["servicos_selecionados"] = []
-                    st.session_state["pdf_gerando"] = True
+                        st.session_state["pdf_gerando"] = True
                     st.rerun()
 
             # ========== EXECUTAR GERAÇÃO DO PDF E OS ==========
