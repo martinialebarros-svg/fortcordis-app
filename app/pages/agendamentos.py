@@ -22,15 +22,15 @@ from fortcordis_modules.integrations import (
 )
 
 
-def _cadastrar_clinica_rapido_agendamentos(nome, endereco=None, telefone=None):
+def _cadastrar_clinica_rapido_agendamentos(nome, endereco=None, telefone=None, tabela_preco_id=None):
     """Cadastra nova clínica em clinicas_parceiras (mesma tabela de Cadastros). Retorna (clinica_id, None) ou (None, msg_erro)."""
     try:
         conn = sqlite3.connect(str(DB_PATH))
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO clinicas_parceiras (nome, endereco, telefone, cidade)
-            VALUES (?, ?, ?, 'Fortaleza')
-        """, (nome or "", endereco or "", telefone or ""))
+            INSERT INTO clinicas_parceiras (nome, endereco, telefone, cidade, tabela_preco_id)
+            VALUES (?, ?, ?, 'Fortaleza', ?)
+        """, (nome or "", endereco or "", telefone or "", tabela_preco_id))
         clinica_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -134,10 +134,25 @@ def render_agendamentos():
                     nova_clinica_nome = st.text_input("Nome da Clínica *", key="nova_clinica_nome_agend")
                     nova_clinica_end = st.text_input("Endereço", key="nova_clinica_end_agend")
                     nova_clinica_tel = st.text_input("Telefone", key="nova_clinica_tel_agend")
+                    # Seleção de tabela de preços
+                    try:
+                        conn_temp.execute("SELECT id, nome FROM tabelas_preco ORDER BY id")
+                        tabelas_list = conn_temp.fetchall()
+                        tabelas_opcoes = {f"ID {t[0]}: {t[1]}": t[0] for t in tabelas_list}
+                        tabela_selecionada = st.selectbox(
+                            "Tabela de Preços",
+                            options=list(tabelas_opcoes.keys()),
+                            index=0,
+                            key="nova_clinica_tabela_preco",
+                            help="Define os valores padrão para agendamentos nesta clínica"
+                        )
+                        nova_clinica_tabela_id = tabelas_opcoes.get(tabela_selecionada, 1)
+                    except Exception:
+                        nova_clinica_tabela_id = 1
                     if st.button("✅ Cadastrar Clínica", key="btn_cadastrar_clinica_agend", type="primary"):
                         if nova_clinica_nome:
                             clinica_id, msg = _cadastrar_clinica_rapido_agendamentos(
-                                nova_clinica_nome, nova_clinica_end, nova_clinica_tel
+                                nova_clinica_nome, nova_clinica_end, nova_clinica_tel, nova_clinica_tabela_id
                             )
                             if clinica_id:
                                 st.success(f"✅ Clínica '{nova_clinica_nome}' cadastrada!")
