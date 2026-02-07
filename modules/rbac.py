@@ -161,7 +161,7 @@ PERMISSOES_POR_PAPEL = {
 # FUNÇÕES DE GERENCIAMENTO DE PERMISSÕES
 # ============================================================================
 
-def inicializar_tabelas_permissoes():
+def inicializar_tabelas_permissoes() -> None:
     """
     Cria as tabelas de permissões no banco.
     """
@@ -206,7 +206,7 @@ def inicializar_tabelas_permissoes():
     logger.info("Tabelas de permissões criadas com sucesso")
 
 
-def inserir_permissoes_padrao():
+def inserir_permissoes_padrao() -> None:
     """
     Insere todas as permissões definidas em PERMISSOES_SISTEMA.
     """
@@ -231,7 +231,7 @@ def inserir_permissoes_padrao():
     logger.info("Permissões padrão inseridas com sucesso")
 
 
-def associar_permissoes_papeis():
+def associar_permissoes_papeis() -> None:
     """
     Associa as permissões aos papéis conforme PERMISSOES_POR_PAPEL.
     """
@@ -423,7 +423,7 @@ def usuario_tem_papel(usuario_id: int, papel: str) -> bool:
 # FUNÇÕES DE INTERFACE (para usar no Streamlit)
 # ============================================================================
 
-def exigir_permissao(modulo: str, acao: str):
+def exigir_permissao(modulo: str, acao: str) -> None:
     """
     Decorator/função para exigir permissão antes de executar código.
     Se não tiver permissão, mostra mensagem e para.
@@ -462,7 +462,7 @@ def verificar_permissao(modulo: str, acao: str) -> bool:
 
 
 
-def mostrar_permissoes_usuario():
+def mostrar_permissoes_usuario() -> None:
     """
     Exibe as permissões do usuário logado de forma legível.
     """

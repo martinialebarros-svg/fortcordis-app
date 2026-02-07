@@ -14,6 +14,10 @@ from app.sql_safe import validar_coluna
 
 logger = logging.getLogger(__name__)
 
+# Constantes de timeout para conexões SQLite (segundos)
+DB_TIMEOUT = 10
+DB_TIMEOUT_LONG = 15
+
 
 @contextmanager
 def get_db():
@@ -23,9 +27,10 @@ def get_db():
         with get_db() as conn:
             conn.execute("INSERT INTO ...", (...))
     """
-    conn = sqlite3.connect(str(DB_PATH), timeout=15, check_same_thread=False)
+    conn = sqlite3.connect(str(DB_PATH), timeout=DB_TIMEOUT_LONG, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("SELECT 1")  # Testa conexão
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -65,7 +70,7 @@ def _db_conn_safe():
                     except Exception:
                         pass
             path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(DB_PATH), timeout=10, check_same_thread=False)
+            conn = sqlite3.connect(str(DB_PATH), timeout=DB_TIMEOUT, check_same_thread=False)
             # Valida que a conexão realmente funciona
             conn.execute("SELECT 1")
             conn.row_factory = sqlite3.Row
@@ -84,7 +89,7 @@ def _db_conn():
 
 
 def _db_init():
-    conn = sqlite3.connect(str(DB_PATH), timeout=10)
+    conn = sqlite3.connect(str(DB_PATH), timeout=DB_TIMEOUT)
     try:
         conn.execute("""CREATE TABLE IF NOT EXISTS clinicas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -200,7 +205,16 @@ def _db_init():
         conn.close()
 
 
-def db_upsert_clinica(nome: str):
+def db_upsert_clinica(nome: str) -> int | None:
+    """
+    Insere ou atualiza uma clínica no banco.
+
+    Args:
+        nome: Nome da clínica
+
+    Returns:
+        ID da clínica inserida ou atualizada, None se inválido
+    """
     _db_init()
     conn = _db_conn()
     nome = nome_proprio_ptbr(nome)
@@ -219,7 +233,17 @@ def db_upsert_clinica(nome: str):
     return conn.execute("SELECT id FROM clinicas WHERE nome_key=?", (key,)).fetchone()["id"]
 
 
-def db_upsert_tutor(nome: str, telefone: str = None):
+def db_upsert_tutor(nome: str, telefone: str = None) -> int | None:
+    """
+    Insere ou atualiza um tutor no banco.
+
+    Args:
+        nome: Nome do tutor
+        telefone: Telefone de contato (opcional)
+
+    Returns:
+        ID do tutor inserido ou atualizado, None se inválido
+    """
     _db_init()
     conn = _db_conn()
     nome = nome_proprio_ptbr(nome)
@@ -246,8 +270,28 @@ def db_upsert_tutor(nome: str, telefone: str = None):
     return conn.execute("SELECT id FROM tutores WHERE nome_key=?", (key,)).fetchone()["id"]
 
 
-def db_upsert_paciente(tutor_id: int, nome: str, especie: str = None, raca: str = None,
-                       sexo: str = None, nascimento: str = None):
+def db_upsert_paciente(
+    tutor_id: int,
+    nome: str,
+    especie: str = None,
+    raca: str = None,
+    sexo: str = None,
+    nascimento: str = None
+) -> int | None:
+    """
+    Insere ou atualiza um paciente no banco.
+
+    Args:
+        tutor_id: ID do tutor responsável
+        nome: Nome do animal
+        especie: Espécie (Canina, Felina, etc.)
+        raca: Raça do animal
+        sexo: Sexo do animal
+        nascimento: Data de nascimento
+
+    Returns:
+        ID do paciente inserido ou atualizado, None se inválido
+    """
     _db_init()
     conn = _db_conn()
     if not tutor_id:

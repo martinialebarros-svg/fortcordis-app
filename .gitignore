@@ -5,6 +5,7 @@ fortcordis.db
 *.sqlite3
 backup_*.sqlite
 backup_*.db
+backups/
 FORTCORDIS_RESTORE_POINT_*/
 fortcordis_code_restore_*.zip
 

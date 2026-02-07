@@ -29,7 +29,7 @@ else:
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def inicializar_tabelas_auth():
+def inicializar_tabelas_auth() -> None:
     """
     Cria as tabelas necessárias para autenticação e permissões.
     Executa apenas uma vez, na primeira inicialização.
