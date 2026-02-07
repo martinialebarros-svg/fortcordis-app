@@ -1474,9 +1474,16 @@ def criar_os_ao_marcar_realizado(agendamento_id):
         )
         row_cli = cursor.fetchone()
         if not row_cli:
-            conn.close()
-            return None, f"Clínica '{clinica_nome}' não encontrada em Cadastros > Clínicas Parceiras."
-        clinica_id, tabela_preco_id = row_cli[0], row_cli[1]
+            # Cadastrar automaticamente a clínica se não existir
+            cursor.execute(
+                "INSERT INTO clinicas_parceiras (nome, cidade, tabela_preco_id) VALUES (?, 'Fortaleza', 1)",
+                (clinica_nome,)
+            )
+            clinica_id = cursor.lastrowid
+            tabela_preco_id = 1
+            conn.commit()
+        else:
+            clinica_id, tabela_preco_id = row_cli[0], row_cli[1]
         nome_servico = _mapear_servico_agendamento_para_nome(servico_texto)
         cursor.execute("SELECT id, valor_base FROM servicos WHERE (ativo = 1 OR ativo IS NULL) AND (nome = ? OR nome LIKE ?) LIMIT 1", (nome_servico, f"%{nome_servico}%"))
         row_serv = cursor.fetchone()

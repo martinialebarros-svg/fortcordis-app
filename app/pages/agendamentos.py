@@ -78,9 +78,15 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
         )
         row_cli = cursor.fetchone()
         if not row_cli:
-            conn.close()
-            return None, f"Clínica '{clinica_nome}' não encontrada."
-        clinica_id = row_cli[0]
+            # Cadastrar automaticamente a clínica se não existir
+            cursor.execute(
+                "INSERT INTO clinicas_parceiras (nome, cidade, tabela_preco_id) VALUES (?, 'Fortaleza', 1)",
+                (clinica_nome,)
+            )
+            clinica_id = cursor.lastrowid
+            conn.commit()
+        else:
+            clinica_id = row_cli[0]
         data_atend = agend.get("data") or agend.get("data_agendamento")
         data_comp = str(data_atend)[:10] if data_atend else datetime.now().strftime("%Y-%m-%d")
         descricao = f"{servico_nome} - {agend.get('paciente', '')}"
