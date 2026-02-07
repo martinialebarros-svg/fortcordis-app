@@ -2468,10 +2468,9 @@ def render_laudos(deps=None):
                                                     status_pagamento, data_competencia
                                                 ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
                                             """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
+                                            conn_fin.commit()
                                             servicos_criados.append((numero_os, vf))
                                             valor_total_os += vf
-
-                                    conn_fin.commit()
 
                                     if servicos_criados:
                                         os_detalhes = ", ".join([f"OS {o[0]} (R$ {o[1]:,.2f})" for o in servicos_criados])
