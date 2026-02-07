@@ -41,8 +41,82 @@ def _cadastrar_clinica_rapido_agendamentos(nome, endereco=None, telefone=None, t
         return None, str(e)
 
 
+def _buscar_servicos_disponiveis_agend(conn):
+    """Busca todos os serviços ativos disponíveis."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, nome, valor_base
+        FROM servicos
+        WHERE ativo = 1 OR ativo IS NULL
+        ORDER BY nome
+    """)
+    cols = [desc[0] for desc in cursor.description]
+    return [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+
+def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
+    """Cria uma OS extra para um serviço adicional."""
+    from fortcordis_modules.database import (
+        buscar_agendamento_por_id,
+        garantir_colunas_financeiro,
+        gerar_numero_os,
+        get_conn,
+    )
+    garantir_colunas_financeiro()
+    agend = buscar_agendamento_por_id(agendamento_id)
+    if not agend:
+        return None, "Agendamento não encontrado."
+    clinica_nome = (agend.get("clinica") or "").strip()
+    if not clinica_nome:
+        return None, "Agendamento sem clínica informada."
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id FROM clinicas_parceiras WHERE nome = ? AND (ativo = 1 OR ativo IS NULL) LIMIT 1",
+            (clinica_nome,),
+        )
+        row_cli = cursor.fetchone()
+        if not row_cli:
+            conn.close()
+            return None, f"Clínica '{clinica_nome}' não encontrada."
+        clinica_id = row_cli[0]
+        data_atend = agend.get("data") or agend.get("data_agendamento")
+        data_comp = str(data_atend)[:10] if data_atend else datetime.now().strftime("%Y-%m-%d")
+        descricao = f"{servico_nome} - {agend.get('paciente', '')}"
+        # Verificar duplicata
+        cursor.execute("""
+            SELECT numero_os FROM financeiro
+            WHERE clinica_id = ? AND data_competencia = ? AND descricao = ?
+            LIMIT 1
+        """, (clinica_id, data_comp, descricao))
+        if cursor.fetchone():
+            conn.close()
+            return None, "already_exists"
+        numero_os = gerar_numero_os()
+        cursor.execute("""
+            INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
+            VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)
+        """, (agendamento_id, clinica_id, numero_os, descricao, valor_final, valor_final, data_comp))
+        conn.commit()
+        conn.close()
+        return numero_os, None
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return None, str(e)
+
+
 def render_agendamentos():
     st.title("📅 Gestão de Agendamentos")
+
+    # Inicializa states para modal de serviços extras
+    if "modal_servicos_realizado_open" not in st.session_state:
+        st.session_state["modal_servicos_realizado_open"] = False
+    if "servicos_extras_selecionados" not in st.session_state:
+        st.session_state["servicos_extras_selecionados"] = []
+    if "agendamento_id_pendente_realizado" not in st.session_state:
+        st.session_state["agendamento_id_pendente_realizado"] = None
 
     tab_novo, tab_lista, tab_calendario, tab_confirmar = st.tabs([
         "➕ Novo Agendamento",
@@ -50,6 +124,88 @@ def render_agendamentos():
         "📅 Calendário",
         "📲 Confirmar amanhã (24h)"
     ])
+
+    # ========== MODAL DE SERVIÇOS EXTRAS ==========
+    if st.session_state["modal_servicos_realizado_open"]:
+        agend_id = st.session_state.get("agendamento_id_pendente_realizado")
+        agend = None
+        clinica_nome = ""
+        clinica_id = None
+        tabela_preco_id = 1
+        servicos_disponiveis = []
+
+        # Buscar dados do agendamento
+        if agend_id:
+            from fortcordis_modules.database import buscar_agendamento_por_id
+            agend = buscar_agendamento_por_id(agend_id)
+            clinica_nome = (agend.get("clinica") or "").strip()
+
+            if clinica_nome:
+                try:
+                    conn = sqlite3.connect(str(DB_PATH))
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT id, tabela_preco_id FROM clinicas_parceiras WHERE nome = ? AND (ativo = 1 OR ativo IS NULL) LIMIT 1",
+                        (clinica_nome,)
+                    )
+                    row_cli = cursor.fetchone()
+                    if row_cli:
+                        clinica_id, tabela_preco_id = row_cli[0], row_cli[1] or 1
+                    servicos_disponiveis = _buscar_servicos_disponiveis_agend(conn)
+                    conn.close()
+                except Exception as e:
+                    st.error(f"Erro ao carregar serviços: {e}")
+
+        with st.form("modal_servicos_realizado"):
+            st.subheader("📋 Adicionar Serviços Extras à OS")
+            st.info(f"Agendamento #{agend_id} - Clínica: **{clinica_nome}**")
+
+            if servicos_disponiveis:
+                st.caption(f"Tabela de preços ID: {tabela_preco_id}")
+
+                # Criar opções para multiselect
+                opcoes_servicos = {
+                    f"{s['nome']} (R$ {s['valor_base']:,.2f})": s
+                    for s in servicos_disponiveis
+                }
+
+                servicos_selecionados = st.multiselect(
+                    "Selecione serviços adicionais para incluir na OS:",
+                    options=list(opcoes_servicos.keys()),
+                    key="ms_servicos_realizado"
+                )
+
+                # Mostrar preview dos valores
+                if servicos_selecionados:
+                    st.markdown("**Preview dos valores:**")
+                    total = 0
+                    for opt in servicos_selecionados:
+                        s = opcoes_servicos[opt]
+                        total += s["valor_base"]
+                        st.text(f"  • {s['nome']}: R$ {s['valor_base']:,.2f}")
+                    st.markdown(f"**Total: R$ {total:,.2f}**")
+            else:
+                st.warning("Nenhum serviço disponível.")
+                servicos_selecionados = []
+
+            col1, col2 = st.columns(2)
+            with col1:
+                submit_confirmar = st.form_submit_button("✅ Confirmar", type="primary")
+            with col2:
+                submit_cancelar = st.form_submit_button("❌ Cancelar")
+
+            if submit_confirmar:
+                st.session_state["servicos_extras_selecionados"] = servicos_selecionados
+                st.session_state["modal_servicos_realizado_open"] = False
+                st.rerun()
+
+            if submit_cancelar:
+                st.session_state["modal_servicos_realizado_open"] = False
+                st.session_state["agendamento_id_pendente_realizado"] = None
+                st.session_state["servicos_extras_selecionados"] = []
+                st.rerun()
+
+    # ========== FIM MODAL ==========
 
     with tab_novo:
         st.subheader("Criar Novo Agendamento")
@@ -303,18 +459,86 @@ def render_agendamentos():
                                 st.rerun()
                     with col_btn2:
                         if agend['status'] in ('Agendado', 'Confirmado'):
-                            if st.button("✅ Marcar Realizado", key=f"realizado_{agend['id']}"):
-                                numero_os, erro_os = criar_os_ao_marcar_realizado(agend['id'])
-                                if erro_os == "already_exists" and numero_os:
-                                    st.info(f"Agendamento marcado como realizado. OS {numero_os} já existia (laudo ou anterior); não foi criada duplicata.")
-                                elif erro_os:
-                                    st.warning(f"Agendamento marcado como realizado. Pendência financeira não criada: {erro_os}")
-                                elif numero_os:
-                                    st.success(f"Agendamento marcado como realizado! OS {numero_os} criada em Contas a Receber.")
-                                else:
-                                    st.success("Agendamento marcado como realizado!")
-                                atualizar_agendamento(agend['id'], status='Realizado')
-                                st.rerun()
+                            with st.form(f"form_realizado_{agend['id']}"):
+                                col_b1, col_b2 = st.columns([1, 2])
+                                with col_b1:
+                                    btn_realizado = st.form_submit_button("✅ Marcar Realizado", type="primary")
+                                with col_b2:
+                                    chk_servicos_extras = st.form_checkbox(
+                                        "Adicionar mais serviços?",
+                                        key=f"chk_servicos_extras_{agend['id']}"
+                                    )
+
+                                if btn_realizado:
+                                    if chk_servicos_extras:
+                                        # Abrir modal de seleção de serviços
+                                        st.session_state["modal_servicos_realizado_open"] = True
+                                        st.session_state["agendamento_id_pendente_realizado"] = agend['id']
+                                        st.session_state["servicos_extras_selecionados"] = []
+                                        st.rerun()
+                                    else:
+                                        # Criar OS normalmente (comportamento original)
+                                        numero_os, erro_os = criar_os_ao_marcar_realizado(agend['id'])
+                                        if erro_os == "already_exists" and numero_os:
+                                            st.info(f"Agendamento marcado como realizado. OS {numero_os} já existia (laudo ou anterior); não foi criada duplicata.")
+                                        elif erro_os:
+                                            st.warning(f"Agendamento marcado como realizado. Pendência financeira não criada: {erro_os}")
+                                        elif numero_os:
+                                            st.success(f"Agendamento marcado como realizado! OS {numero_os} criada em Contas a Receber.")
+                                        else:
+                                            st.success("Agendamento marcado como realizado!")
+                                        atualizar_agendamento(agend['id'], status='Realizado')
+                                        st.rerun()
+
+                            # Processar serviços extras após confirmar no modal
+                            if st.session_state.get("agendamento_id_pendente_realizado") == agend['id']:
+                                servicos_extras = st.session_state.get("servicos_extras_selecionados", [])
+                                if servicos_extras:
+                                    # Criar OS principal
+                                    numero_os, erro_os = criar_os_ao_marcar_realizado(agend['id'])
+                                    if erro_os == "already_exists" and numero_os:
+                                        st.info(f"OS {numero_os} já existia.")
+                                    elif erro_os:
+                                        st.warning(f"OS principal não criada: {erro_os}")
+                                    elif numero_os:
+                                        st.success(f"OS {numero_os} criada.")
+
+                                    # Criar OS para cada serviço extra
+                                    from fortcordis_modules.database import get_conn
+                                    conn = sqlite3.connect(str(DB_PATH))
+                                    cursor = conn.cursor()
+                                    cursor.execute("SELECT id, nome, valor_base FROM servicos WHERE ativo = 1 OR ativo IS NULL")
+                                    servicos_db = {row[1]: {"id": row[0], "valor_base": row[2]} for row in cursor.fetchall()}
+                                    cursor.execute("SELECT id, tabela_preco_id FROM clinicas_parceiras WHERE nome = ? AND (ativo = 1 OR ativo IS NULL)", (agend.get("clinica"),))
+                                    row_cli = cursor.fetchone()
+                                    tabela_preco_id = row_cli[1] if row_cli else 1
+                                    conn.close()
+
+                                    for opt in servicos_extras:
+                                        nome_servico = opt.split(" (R$")[0]
+                                        if nome_servico in servicos_db:
+                                            servico_info = servicos_db[nome_servico]
+                                            # Buscar valor da tabela de preços
+                                            conn2 = sqlite3.connect(str(DB_PATH))
+                                            cursor2 = conn2.cursor()
+                                            cursor2.execute("SELECT valor FROM servico_preco WHERE servico_id = ? AND tabela_preco_id = ?", (servico_info["id"], tabela_preco_id))
+                                            row_preco = cursor2.fetchone()
+                                            valor_final = float(row_preco[0]) if row_preco else servico_info["valor_base"]
+                                            conn2.close()
+
+                                            num_os_extra, err_extra = _criar_os_servico_extra(agend['id'], nome_servico, valor_final)
+                                            if err_extra == "already_exists":
+                                                st.info(f"💰 OS já existente para {nome_servico}.")
+                                            elif err_extra:
+                                                st.warning(f"Erro ao criar OS para {nome_servico}: {err_extra}")
+                                            else:
+                                                st.success(f"💰 OS extra {num_os_extra} criada para {nome_servico} (R$ {valor_final:,.2f})")
+
+                                    # Limpar states e marcar como realizado
+                                    st.session_state["agendamento_id_pendente_realizado"] = None
+                                    st.session_state["servicos_extras_selecionados"] = []
+                                    atualizar_agendamento(agend['id'], status='Realizado')
+                                    st.rerun()
                     with col_btn3:
                         if agend['status'] in ('Agendado', 'Confirmado'):
                             if st.button("❌ Cancelar", key=f"cancelar_{agend['id']}"):
