@@ -535,8 +535,8 @@ st.sidebar.caption("Sistema carregado")
 # Evita o Streamlit "Magic" imprimir retornos None na tela
 try:
     st.set_option("runner.magicEnabled", False)
-        except Exception as e:
-            st.error(f"Erro ao inicializar autenticação: {e}")
+except Exception:
+    pass
 
 # Dicionário padrão (zeros) para evitar KeyError antes do XML
 DADOS_DEFAULT = {
