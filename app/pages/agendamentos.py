@@ -60,7 +60,6 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
         buscar_agendamento_por_id,
         garantir_colunas_financeiro,
         gerar_numero_os,
-        get_conn,
     )
     garantir_colunas_financeiro()
     agend = buscar_agendamento_por_id(agendamento_id)
@@ -69,27 +68,29 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
     clinica_nome = (agend.get("clinica") or "").strip()
     if not clinica_nome:
         return None, "Agendamento sem clínica informada."
-    conn = get_conn()
+
+    conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
     try:
+        # Verificar ou cadastrar clínica
         cursor.execute(
             "SELECT id FROM clinicas_parceiras WHERE nome = ? AND (ativo = 1 OR ativo IS NULL) LIMIT 1",
             (clinica_nome,),
         )
         row_cli = cursor.fetchone()
         if not row_cli:
-            # Cadastrar automaticamente a clínica se não existir
             cursor.execute(
                 "INSERT INTO clinicas_parceiras (nome, cidade, tabela_preco_id) VALUES (?, 'Fortaleza', 1)",
                 (clinica_nome,)
             )
             clinica_id = cursor.lastrowid
-            conn.commit()
         else:
             clinica_id = row_cli[0]
+
         data_atend = agend.get("data") or agend.get("data_agendamento")
         data_comp = str(data_atend)[:10] if data_atend else datetime.now().strftime("%Y-%m-%d")
         descricao = f"{servico_nome} - {agend.get('paciente', '')}"
+
         # Verificar duplicata
         cursor.execute("""
             SELECT numero_os FROM financeiro
@@ -99,6 +100,7 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
         if cursor.fetchone():
             conn.close()
             return None, "already_exists"
+
         numero_os = gerar_numero_os()
         cursor.execute("""
             INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
