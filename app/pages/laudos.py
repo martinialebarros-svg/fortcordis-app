@@ -2198,8 +2198,6 @@ def render_laudos(deps=None):
                 st.session_state["servicos_selecionados"] = []
             if "pdf_gerando" not in st.session_state:
                 st.session_state["pdf_gerando"] = False
-            if "chk_adicionar_servicos" not in st.session_state:
-                st.session_state["chk_adicionar_servicos"] = False
 
             # ========== MODAL DE SERVIÇOS ==========
             if st.session_state["modal_servicos_open"]:
@@ -2297,12 +2295,10 @@ def render_laudos(deps=None):
                     # Checkbox para adicionar mais serviços
                     adicionar_servicos = st.checkbox(
                         "Adicionar mais serviços à OS",
-                        value=st.session_state.get("chk_adicionar_servicos", False),
                         key="chk_adicionar_servicos"
                     )
 
                 if gerar_clicado:
-                    st.session_state["chk_adicionar_servicos"] = adicionar_servicos
                     if adicionar_servicos:
                         # Abrir modal de seleção de serviços (ainda NÃO gera PDF)
                         st.session_state["modal_servicos_open"] = True
