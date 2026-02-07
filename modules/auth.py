@@ -6,16 +6,19 @@ IMPORTANTE: Este módulo usa bcrypt para hash de senhas.
 Instalar: pip install bcrypt --break-system-packages
 """
 
+import logging
 import sqlite3
 import bcrypt
 import hashlib
 import secrets  # ✅ PARA criar_token_persistente
-import json 
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Tuple
 import streamlit as st
 import os
+
+logger = logging.getLogger(__name__)
 
 # Caminho do banco: pasta do projeto (funciona no Streamlit Cloud) ou variável de ambiente
 if os.environ.get("FORTCORDIS_DB_PATH"):
@@ -188,7 +191,7 @@ def verificar_senha(senha: str, senha_hash: str) -> bool:
     try:
         return bcrypt.checkpw(senha.encode('utf-8'), senha_hash.encode('utf-8'))
     except Exception as e:
-        print(f"❌ Erro ao verificar senha: {e}")
+        logger.error(f"Erro ao verificar senha: {e}")
         return False
 
 
@@ -778,7 +781,7 @@ def criar_token_persistente(usuario_id, duracao_dias=30):
         
         return token
     except Exception as e:
-        print(f"Erro ao criar token: {e}")
+        logger.error(f"Erro ao criar token: {e}")
         return None
 
 def validar_token_persistente(token):
@@ -880,9 +883,9 @@ def carregar_sessao_por_token(token):
         st.session_state["permissoes"] = carregar_permissoes_usuario(usuario_id)
         
         return True
-        
+
     except Exception as e:
-        print(f"Erro ao carregar sessão: {e}")
+        logger.error(f"Erro ao carregar sessão: {e}")
         return False
     
 def carregar_permissoes_usuario(usuario_id):
@@ -921,9 +924,9 @@ def carregar_permissoes_usuario(usuario_id):
         conn.close()
         
         return list(permissoes_set)
-        
+
     except Exception as e:
-        print(f"Erro ao carregar permissões: {e}")
+        logger.error(f"Erro ao carregar permissões: {e}")
         return []    
 
 # ============================================================================
@@ -963,12 +966,12 @@ def salvar_sessao_persistente(token):
         
         with open(arquivo_sessao, 'w') as f:
             json.dump(dados, f)
-        
-        print(f"✅ Sessão salva em: {arquivo_sessao}")
+
+        logger.info(f"Sessão salva em: {arquivo_sessao}")
         return True
-        
+
     except Exception as e:
-        print(f"❌ Erro ao salvar sessão: {e}")
+        logger.error(f"Erro ao salvar sessão: {e}")
         return False
 
 def carregar_sessao_persistente():
@@ -989,27 +992,27 @@ def carregar_sessao_persistente():
             # Expirado, remove arquivo
             arquivo_sessao.unlink()
             return None
-        
-        print(f"✅ Sessão recuperada de: {arquivo_sessao}")
+
+        logger.info(f"Sessão recuperada de: {arquivo_sessao}")
         return dados["token"]
-        
+
     except Exception as e:
-        print(f"❌ Erro ao carregar sessão: {e}")
+        logger.error(f"Erro ao carregar sessão: {e}")
         return None
 
 def remover_sessao_persistente():
     """Remove arquivo de sessão (logout)"""
     try:
         arquivo_sessao = obter_caminho_sessao()
-        
+
         if arquivo_sessao.exists():
             arquivo_sessao.unlink()
-            print(f"✅ Sessão removida de: {arquivo_sessao}")
-        
+            logger.info(f"Sessão removida de: {arquivo_sessao}")
+
         return True
-        
+
     except Exception as e:
-        print(f"❌ Erro ao remover sessão: {e}")
+        logger.error(f"Erro ao remover sessão: {e}")
         return False
 
 # ============================================================================
@@ -1193,14 +1196,14 @@ def mostrar_tela_login():
         token_arquivo = carregar_sessao_persistente()
         
         if token_arquivo:
-            print(f"🔍 Token encontrado no arquivo: {token_arquivo[:20]}...")
-            
+            logger.debug(f"Token encontrado no arquivo: {token_arquivo[:20]}...")
+
             if carregar_sessao_por_token(token_arquivo):
                 st.session_state["auth_token"] = token_arquivo
-                print("✅ Login automático realizado!")
+                logger.info("Login automático realizado")
                 st.rerun()
             else:
-                print("❌ Token inválido, removendo arquivo")
+                logger.warning("Token inválido, removendo arquivo")
                 remover_sessao_persistente()
     
     if st.session_state.get("autenticado"):

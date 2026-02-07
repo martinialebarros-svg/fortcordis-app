@@ -5,11 +5,14 @@ Controle de permissões baseado em papéis
 Este módulo gerencia quem pode fazer o quê no sistema.
 """
 
+import logging
 import sqlite3
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import streamlit as st
 import os
+
+logger = logging.getLogger(__name__)
 
 # Caminho do banco: pasta do projeto (funciona no Streamlit Cloud) ou variável de ambiente
 if os.environ.get("FORTCORDIS_DB_PATH"):
@@ -162,120 +165,117 @@ def inicializar_tabelas_permissoes():
     """
     Cria as tabelas de permissões no banco.
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.cursor()
-    
-    # Tabela de permissões disponíveis
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS permissoes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            modulo TEXT NOT NULL,
-            acao TEXT NOT NULL,
-            descricao TEXT,
-            UNIQUE(modulo, acao)
-        )
-    """)
-    
-    # Tabela de permissões por papel
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS papel_permissao (
-            papel_id INTEGER NOT NULL,
-            permissao_id INTEGER NOT NULL,
-            PRIMARY KEY (papel_id, permissao_id),
-            FOREIGN KEY (papel_id) REFERENCES papeis(id),
-            FOREIGN KEY (permissao_id) REFERENCES permissoes(id)
-        )
-    """)
-    
-    # Tabela de permissões customizadas por usuário
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usuario_permissao (
-            usuario_id INTEGER NOT NULL,
-            permissao_id INTEGER NOT NULL,
-            concedida INTEGER DEFAULT 1,
-            PRIMARY KEY (usuario_id, permissao_id),
-            FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
-            FOREIGN KEY (permissao_id) REFERENCES permissoes(id)
-        )
-    """)
-    
-    conn.commit()
-    conn.close()
-    print("✅ Tabelas de permissões criadas!")
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        cursor = conn.cursor()
+
+        # Tabela de permissões disponíveis
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS permissoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                modulo TEXT NOT NULL,
+                acao TEXT NOT NULL,
+                descricao TEXT,
+                UNIQUE(modulo, acao)
+            )
+        """)
+
+        # Tabela de permissões por papel
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS papel_permissao (
+                papel_id INTEGER NOT NULL,
+                permissao_id INTEGER NOT NULL,
+                PRIMARY KEY (papel_id, permissao_id),
+                FOREIGN KEY (papel_id) REFERENCES papeis(id),
+                FOREIGN KEY (permissao_id) REFERENCES permissoes(id)
+            )
+        """)
+
+        # Tabela de permissões customizadas por usuário
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usuario_permissao (
+                usuario_id INTEGER NOT NULL,
+                permissao_id INTEGER NOT NULL,
+                concedida INTEGER DEFAULT 1,
+                PRIMARY KEY (usuario_id, permissao_id),
+                FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+                FOREIGN KEY (permissao_id) REFERENCES permissoes(id)
+            )
+        """)
+
+        conn.commit()
+    logger.info("Tabelas de permissões criadas com sucesso")
 
 
 def inserir_permissoes_padrao():
     """
     Insere todas as permissões definidas em PERMISSOES_SISTEMA.
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.cursor()
-    
-    for modulo, config in PERMISSOES_SISTEMA.items():
-        for acao in config["acoes"]:
-            try:
-                cursor.execute(
-                    """
-                    INSERT INTO permissoes (modulo, acao, descricao)
-                    VALUES (?, ?, ?)
-                    """,
-                    (modulo, acao, f"{acao.title()} em {config['descricao']}")
-                )
-            except sqlite3.IntegrityError:
-                # Permissão já existe
-                pass
-    
-    conn.commit()
-    conn.close()
-    print("✅ Permissões padrão inseridas!")
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        cursor = conn.cursor()
+
+        for modulo, config in PERMISSOES_SISTEMA.items():
+            for acao in config["acoes"]:
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO permissoes (modulo, acao, descricao)
+                        VALUES (?, ?, ?)
+                        """,
+                        (modulo, acao, f"{acao.title()} em {config['descricao']}")
+                    )
+                except sqlite3.IntegrityError:
+                    # Permissão já existe
+                    pass
+
+        conn.commit()
+    logger.info("Permissões padrão inseridas com sucesso")
 
 
 def associar_permissoes_papeis():
     """
     Associa as permissões aos papéis conforme PERMISSOES_POR_PAPEL.
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.cursor()
-    
-    for papel_nome, permissoes in PERMISSOES_POR_PAPEL.items():
-        # Busca ID do papel
-        cursor.execute("SELECT id FROM papeis WHERE nome = ?", (papel_nome,))
-        papel_row = cursor.fetchone()
-        if not papel_row:
-            print(f"⚠️ Papel '{papel_nome}' não encontrado")
-            continue
-        papel_id = papel_row[0]
-        
-        # Para cada módulo
-        for modulo, acoes in permissoes.items():
-            for acao in acoes:
-                # Busca ID da permissão
-                cursor.execute(
-                    "SELECT id FROM permissoes WHERE modulo = ? AND acao = ?",
-                    (modulo, acao)
-                )
-                perm_row = cursor.fetchone()
-                if not perm_row:
-                    print(f"⚠️ Permissão {modulo}.{acao} não encontrada")
-                    continue
-                perm_id = perm_row[0]
-                
-                # Associa
-                try:
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        cursor = conn.cursor()
+
+        for papel_nome, permissoes in PERMISSOES_POR_PAPEL.items():
+            # Busca ID do papel
+            cursor.execute("SELECT id FROM papeis WHERE nome = ?", (papel_nome,))
+            papel_row = cursor.fetchone()
+            if not papel_row:
+                logger.warning(f"Papel '{papel_nome}' não encontrado")
+                continue
+            papel_id = papel_row[0]
+
+            # Para cada módulo
+            for modulo, acoes in permissoes.items():
+                for acao in acoes:
+                    # Busca ID da permissão
                     cursor.execute(
-                        """
-                        INSERT INTO papel_permissao (papel_id, permissao_id)
-                        VALUES (?, ?)
-                        """,
-                        (papel_id, perm_id)
+                        "SELECT id FROM permissoes WHERE modulo = ? AND acao = ?",
+                        (modulo, acao)
                     )
-                except sqlite3.IntegrityError:
-                    # Já associado
-                    pass
-    
-    conn.commit()
-    conn.close()
-    print("✅ Permissões associadas aos papéis!")
+                    perm_row = cursor.fetchone()
+                    if not perm_row:
+                        logger.warning(f"Permissão {modulo}.{acao} não encontrada")
+                        continue
+                    perm_id = perm_row[0]
+
+                    # Associa
+                    try:
+                        cursor.execute(
+                            """
+                            INSERT INTO papel_permissao (papel_id, permissao_id)
+                            VALUES (?, ?)
+                            """,
+                            (papel_id, perm_id)
+                        )
+                    except sqlite3.IntegrityError:
+                        # Já associado
+                        pass
+
+        conn.commit()
+    logger.info("Permissões associadas aos papéis com sucesso")
 
 
 # ============================================================================
@@ -285,50 +285,49 @@ def associar_permissoes_papeis():
 def usuario_tem_permissao(usuario_id: int, modulo: str, acao: str) -> bool:
     """
     Verifica se um usuário tem permissão para executar uma ação em um módulo.
-    
+
     Args:
         usuario_id: ID do usuário
         modulo: Nome do módulo (ex: "laudos")
         acao: Nome da ação (ex: "assinar")
-        
+
     Returns:
         True se tem permissão, False caso contrário
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.cursor()
-    
-    # Busca permissão através dos papéis do usuário
-    cursor.execute(
-        """
-        SELECT COUNT(*)
-        FROM usuario_papel up
-        JOIN papel_permissao pp ON up.papel_id = pp.papel_id
-        JOIN permissoes p ON pp.permissao_id = p.id
-        WHERE up.usuario_id = ? AND p.modulo = ? AND p.acao = ?
-        """,
-        (usuario_id, modulo, acao)
-    )
-    
-    tem_por_papel = cursor.fetchone()[0] > 0
-    
-    # Verifica permissões customizadas (podem revogar ou conceder)
-    cursor.execute(
-        """
-        SELECT up.concedida
-        FROM usuario_permissao up
-        JOIN permissoes p ON up.permissao_id = p.id
-        WHERE up.usuario_id = ? AND p.modulo = ? AND p.acao = ?
-        """,
-        (usuario_id, modulo, acao)
-    )
-    
-    custom = cursor.fetchone()
-    conn.close()
-    
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        cursor = conn.cursor()
+
+        # Busca permissão através dos papéis do usuário
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM usuario_papel up
+            JOIN papel_permissao pp ON up.papel_id = pp.papel_id
+            JOIN permissoes p ON pp.permissao_id = p.id
+            WHERE up.usuario_id = ? AND p.modulo = ? AND p.acao = ?
+            """,
+            (usuario_id, modulo, acao)
+        )
+
+        tem_por_papel = cursor.fetchone()[0] > 0
+
+        # Verifica permissões customizadas (podem revogar ou conceder)
+        cursor.execute(
+            """
+            SELECT up.concedida
+            FROM usuario_permissao up
+            JOIN permissoes p ON up.permissao_id = p.id
+            WHERE up.usuario_id = ? AND p.modulo = ? AND p.acao = ?
+            """,
+            (usuario_id, modulo, acao)
+        )
+
+        custom = cursor.fetchone()
+
     # Se tem permissão customizada, ela prevalece
     if custom is not None:
         return bool(custom[0])
-    
+
     # Senão, vai pelo papel
     return tem_por_papel
 
@@ -345,41 +344,40 @@ def obter_permissoes_usuario(usuario_id: int) -> Dict[str, List[str]]:
         Dicionário {modulo: [acoes]}
     """
     def _buscar():
-        conn = sqlite3.connect(str(DB_PATH))
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT DISTINCT p.modulo, p.acao
-            FROM usuario_papel up
-            JOIN papel_permissao pp ON up.papel_id = pp.papel_id
-            JOIN permissoes p ON pp.permissao_id = p.id
-            WHERE up.usuario_id = ?
-            """,
-            (usuario_id,)
-        )
-        permissoes = {}
-        for modulo, acao in cursor.fetchall():
-            if modulo not in permissoes:
-                permissoes[modulo] = []
-            permissoes[modulo].append(acao)
-        cursor.execute(
-            """
-            SELECT p.modulo, p.acao, up.concedida
-            FROM usuario_permissao up
-            JOIN permissoes p ON up.permissao_id = p.id
-            WHERE up.usuario_id = ?
-            """,
-            (usuario_id,)
-        )
-        for modulo, acao, concedida in cursor.fetchall():
-            if modulo not in permissoes:
-                permissoes[modulo] = []
-            if concedida and acao not in permissoes[modulo]:
+        with sqlite3.connect(str(DB_PATH)) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT DISTINCT p.modulo, p.acao
+                FROM usuario_papel up
+                JOIN papel_permissao pp ON up.papel_id = pp.papel_id
+                JOIN permissoes p ON pp.permissao_id = p.id
+                WHERE up.usuario_id = ?
+                """,
+                (usuario_id,)
+            )
+            permissoes = {}
+            for modulo, acao in cursor.fetchall():
+                if modulo not in permissoes:
+                    permissoes[modulo] = []
                 permissoes[modulo].append(acao)
-            elif not concedida and acao in permissoes[modulo]:
-                permissoes[modulo].remove(acao)
-        conn.close()
-        return permissoes
+            cursor.execute(
+                """
+                SELECT p.modulo, p.acao, up.concedida
+                FROM usuario_permissao up
+                JOIN permissoes p ON up.permissao_id = p.id
+                WHERE up.usuario_id = ?
+                """,
+                (usuario_id,)
+            )
+            for modulo, acao, concedida in cursor.fetchall():
+                if modulo not in permissoes:
+                    permissoes[modulo] = []
+                if concedida and acao not in permissoes[modulo]:
+                    permissoes[modulo].append(acao)
+                elif not concedida and acao in permissoes[modulo]:
+                    permissoes[modulo].remove(acao)
+            return permissoes
 
     try:
         return _buscar()
@@ -397,30 +395,28 @@ def obter_permissoes_usuario(usuario_id: int) -> Dict[str, List[str]]:
 def usuario_tem_papel(usuario_id: int, papel: str) -> bool:
     """
     Verifica se usuário tem um papel específico.
-    
+
     Args:
         usuario_id: ID do usuário
         papel: Nome do papel (ex: "admin")
-        
+
     Returns:
         True se tem o papel, False caso contrário
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.cursor()
-    
-    cursor.execute(
-        """
-        SELECT COUNT(*)
-        FROM usuario_papel up
-        JOIN papeis p ON up.papel_id = p.id
-        WHERE up.usuario_id = ? AND p.nome = ?
-        """,
-        (usuario_id, papel)
-    )
-    
-    result = cursor.fetchone()[0] > 0
-    conn.close()
-    return result
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM usuario_papel up
+            JOIN papeis p ON up.papel_id = p.id
+            WHERE up.usuario_id = ? AND p.nome = ?
+            """,
+            (usuario_id, papel)
+        )
+
+        return cursor.fetchone()[0] > 0
 
 
 # ============================================================================
@@ -495,106 +491,102 @@ def mostrar_permissoes_usuario():
 
 
 def atribuir_permissao_customizada(
-    usuario_id: int, 
-    modulo: str, 
-    acao: str, 
+    usuario_id: int,
+    modulo: str,
+    acao: str,
     conceder: bool = True
 ) -> Tuple[bool, str]:
     """
     Atribui ou revoga uma permissão customizada para um usuário.
-    
+
     Args:
         usuario_id: ID do usuário
         modulo: Nome do módulo
         acao: Nome da ação
         conceder: True para conceder, False para revogar
-        
+
     Returns:
         (sucesso, mensagem)
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.cursor()
-    
     try:
-        # Busca ID da permissão
-        cursor.execute(
-            "SELECT id FROM permissoes WHERE modulo = ? AND acao = ?",
-            (modulo, acao)
-        )
-        perm = cursor.fetchone()
-        if not perm:
-            return False, f"❌ Permissão {modulo}.{acao} não existe"
-        
-        perm_id = perm[0]
-        
-        # Insere ou atualiza
-        cursor.execute(
-            """
-            INSERT INTO usuario_permissao (usuario_id, permissao_id, concedida)
-            VALUES (?, ?, ?)
-            ON CONFLICT(usuario_id, permissao_id) DO UPDATE SET concedida = ?
-            """,
-            (usuario_id, perm_id, 1 if conceder else 0, 1 if conceder else 0)
-        )
-        
-        conn.commit()
-        
+        with sqlite3.connect(str(DB_PATH)) as conn:
+            cursor = conn.cursor()
+
+            # Busca ID da permissão
+            cursor.execute(
+                "SELECT id FROM permissoes WHERE modulo = ? AND acao = ?",
+                (modulo, acao)
+            )
+            perm = cursor.fetchone()
+            if not perm:
+                return False, f"❌ Permissão {modulo}.{acao} não existe"
+
+            perm_id = perm[0]
+
+            # Insere ou atualiza
+            cursor.execute(
+                """
+                INSERT INTO usuario_permissao (usuario_id, permissao_id, concedida)
+                VALUES (?, ?, ?)
+                ON CONFLICT(usuario_id, permissao_id) DO UPDATE SET concedida = ?
+                """,
+                (usuario_id, perm_id, 1 if conceder else 0, 1 if conceder else 0)
+            )
+
+            conn.commit()
+
         acao_texto = "concedida" if conceder else "revogada"
         return True, f"✅ Permissão {modulo}.{acao} {acao_texto} com sucesso"
-        
+
     except Exception as e:
         return False, f"❌ Erro ao modificar permissão: {e}"
-    finally:
-        conn.close()
 
 
 def remover_permissao_customizada(usuario_id: int, modulo: str, acao: str) -> Tuple[bool, str]:
     """
     Remove uma permissão customizada (volta para as permissões do papel).
-    
+
     Args:
         usuario_id: ID do usuário
         modulo: Nome do módulo
         acao: Nome da ação
-        
+
     Returns:
         (sucesso, mensagem)
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    cursor = conn.cursor()
-    
     try:
-        # Busca ID da permissão
-        cursor.execute(
-            "SELECT id FROM permissoes WHERE modulo = ? AND acao = ?",
-            (modulo, acao)
-        )
-        perm = cursor.fetchone()
-        if not perm:
-            return False, f"❌ Permissão {modulo}.{acao} não existe"
-        
-        perm_id = perm[0]
-        
-        # Remove
-        cursor.execute(
-            """
-            DELETE FROM usuario_permissao
-            WHERE usuario_id = ? AND permissao_id = ?
-            """,
-            (usuario_id, perm_id)
-        )
-        
-        conn.commit()
-        
-        if cursor.rowcount > 0:
-            return True, f"✅ Permissão customizada removida (volta ao padrão do papel)"
-        else:
-            return False, "⚠️ Permissão customizada não existia"
-        
+        with sqlite3.connect(str(DB_PATH)) as conn:
+            cursor = conn.cursor()
+
+            # Busca ID da permissão
+            cursor.execute(
+                "SELECT id FROM permissoes WHERE modulo = ? AND acao = ?",
+                (modulo, acao)
+            )
+            perm = cursor.fetchone()
+            if not perm:
+                return False, f"❌ Permissão {modulo}.{acao} não existe"
+
+            perm_id = perm[0]
+
+            # Remove
+            cursor.execute(
+                """
+                DELETE FROM usuario_permissao
+                WHERE usuario_id = ? AND permissao_id = ?
+                """,
+                (usuario_id, perm_id)
+            )
+
+            conn.commit()
+
+            if cursor.rowcount > 0:
+                return True, f"✅ Permissão customizada removida (volta ao padrão do papel)"
+            else:
+                return False, "⚠️ Permissão customizada não existia"
+
     except Exception as e:
         return False, f"❌ Erro ao remover permissão: {e}"
-    finally:
-        conn.close()
 
 
 # ============================================================================

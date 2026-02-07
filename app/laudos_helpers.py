@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import copy
+import logging
 import os
 import re
 import sqlite3
@@ -16,6 +17,8 @@ from app.config import DB_PATH
 from app.utils import _norm_key
 from app.laudos_refs import calcular_referencia_tabela
 from app.sql_safe import validar_tabela
+
+logger = logging.getLogger(__name__)
 
 # Constantes para editor de frases
 QUALI_DET = {
@@ -450,7 +453,11 @@ def carregar_frases(arquivo_frases: str, frases_default: dict) -> dict[str, Any]
         try:
             with open(arquivo_frases, "r", encoding="utf-8") as f:
                 base = {**frases_default, **json.load(f)}
-        except Exception:
+        except json.JSONDecodeError as e:
+            logger.error(f"Erro ao parsear frases_personalizadas.json: {e}")
+            base = None
+        except Exception as e:
+            logger.error(f"Erro ao carregar frases personalizadas: {e}")
             base = None
         if base is not None:
             for k in list(base.keys()):
@@ -467,7 +474,8 @@ def carregar_frases(arquivo_frases: str, frases_default: dict) -> dict[str, Any]
         try:
             with open(ARQUIVO_FRASES_REPO, "r", encoding="utf-8") as f:
                 seed_repo = json.load(f)
-        except Exception:
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Erro ao carregar seed do repo: {e}")
             seed_repo = None
 
     if seed_repo:
