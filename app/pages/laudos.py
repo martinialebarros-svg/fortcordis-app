@@ -83,6 +83,26 @@ def render_laudos(deps=None):
     calcular_valor_final = deps.calcular_valor_final
     gerar_numero_os = deps.gerar_numero_os
 
+
+def _buscar_servicos_disponiveis(conn, clinica_id):
+    """Busca todos os serviços ativos disponíveis para a clínica."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, nome, valor_base
+        FROM servicos
+        WHERE ativo = 1 OR ativo IS NULL
+        ORDER BY nome
+    """)
+    return cursor.fetchall()
+
+
+def _get_tabela_preco_id(conn, clinica_id):
+    """Busca o ID da tabela de preço da clínica."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT tabela_preco_id FROM clinicas_parceiras WHERE id = ?", (clinica_id,))
+    result = cursor.fetchone()
+    return result[0] if result else None
+
     sb_patologia = st.session_state.get("sb_patologia", "Normal")
     sb_grau_refluxo = st.session_state.get("sb_grau_refluxo", "Leve")
     sb_grau_geral = st.session_state.get("sb_grau_geral", "Normal")
@@ -2170,7 +2190,130 @@ def render_laudos(deps=None):
 
 
         if verificar_permissao("laudos", "criar"):
-            if st.button("🧾 Gerar PDF"):
+            # Inicializa state para modal de serviços se não existir
+            if "modal_servicos_open" not in st.session_state:
+                st.session_state["modal_servicos_open"] = False
+            if "servicos_selecionados" not in st.session_state:
+                st.session_state["servicos_selecionados"] = []
+            if "pdf_gerando" not in st.session_state:
+                st.session_state["pdf_gerando"] = False
+            if "chk_adicionar_servicos" not in st.session_state:
+                st.session_state["chk_adicionar_servicos"] = False
+
+            # ========== MODAL DE SERVIÇOS ==========
+            if st.session_state["modal_servicos_open"]:
+                with st.form("modal_servicos"):
+                    st.subheader("📋 Adicionar Serviços à OS")
+                    st.info(f"Clínica: **{clinica or 'Não informada'}**")
+
+                    # Buscar serviços disponíveis
+                    clinica_nome = (clinica or "").strip()
+                    servicos_disponiveis = []
+                    tabela_nome = ""
+
+                    if clinica_nome:
+                        try:
+                            conn_fin = sqlite3.connect(str(DB_PATH))
+                            cursor_fin = conn_fin.cursor()
+                            cursor_fin.execute(
+                                "SELECT id, tabela_preco_id FROM clinicas_parceiras WHERE nome = ? AND (ativo = 1 OR ativo IS NULL)",
+                                (clinica_nome,)
+                            )
+                            res_clinica = cursor_fin.fetchone()
+                            if res_clinica:
+                                clinica_id = res_clinica[0]
+                                tabela_id = res_clinica[1]
+                                # Buscar nome da tabela
+                                cursor_fin.execute("SELECT nome FROM tabelas_preco WHERE id = ?", (tabela_id,))
+                                tab_row = cursor_fin.fetchone()
+                                tabela_nome = tab_row[0] if tab_row else "Padrão"
+
+                                # Buscar serviços disponíveis
+                                servicos_disponiveis = _buscar_servicos_disponiveis(conn_fin, clinica_id)
+                            conn_fin.close()
+                        except Exception as e:
+                            st.error(f"Erro ao carregar serviços: {e}")
+
+                    if servicos_disponiveis:
+                        st.caption(f"Tabela de preços: **{tabela_nome}**")
+
+                        # Criar opções para multiselect
+                        opcoes_servicos = {
+                            f"{s['nome']} (R$ {s['valor_base']:,.2f})": s
+                            for s in servicos_disponiveis
+                        }
+
+                        # Seleção de serviços (Ecocardiograma marcado por padrão)
+                        servicos_padrao = ["Ecocardiograma"]
+                        valores_default = [
+                            opt for opt, s in opcoes_servicos.items()
+                            if any(padrao in s["nome"] for padrao in servicos_padrao)
+                        ]
+
+                        servicos_selecionados = st.multiselect(
+                            "Selecione os serviços para incluir na OS:",
+                            options=list(opcoes_servicos.keys()),
+                            default=valores_default,
+                            key="ms_servicos_os"
+                        )
+
+                        # Mostrar preview dos valores
+                        if servicos_selecionados:
+                            st.markdown("**Preview dos valores:**")
+                            total = 0
+                            for opt in servicos_selecionados:
+                                s = opcoes_servicos[opt]
+                                total += s["valor_base"]
+                                st.text(f"  • {s['nome']}: R$ {s['valor_base']:,.2f}")
+                            st.markdown(f"**Total: R$ {total:,.2f}**")
+                    else:
+                        st.warning("Nenhum serviço disponível ou clínica não cadastrada.")
+                        servicos_selecionados = []
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        submit_confirmar = st.form_submit_button("✅ Confirmar e Gerar PDF", type="primary")
+                    with col2:
+                        submit_cancelar = st.form_submit_button("❌ Cancelar")
+
+                    if submit_confirmar:
+                        # Salvar serviços selecionados no session_state
+                        st.session_state["servicos_selecionados"] = servicos_selecionados
+                        st.session_state["modal_servicos_open"] = False
+                        st.rerun()
+
+                    if submit_cancelar:
+                        st.session_state["modal_servicos_open"] = False
+                        st.rerun()
+
+            # ========== BOTÃO PRINCIPAL ==========
+            with st.form("form_gerar_pdf"):
+                col_btn, col_check = st.columns([1, 2])
+                with col_btn:
+                    gerar_clicado = st.form_submit_button("🧾 Gerar PDF", type="primary")
+                with col_check:
+                    # Checkbox para adicionar mais serviços
+                    adicionar_servicos = st.checkbox(
+                        "Adicionar mais serviços à OS",
+                        value=st.session_state.get("chk_adicionar_servicos", False),
+                        key="chk_adicionar_servicos"
+                    )
+
+                if gerar_clicado:
+                    st.session_state["chk_adicionar_servicos"] = adicionar_servicos
+                    if adicionar_servicos:
+                        # Abrir modal de seleção de serviços
+                        st.session_state["modal_servicos_open"] = True
+                    else:
+                        # Gerar apenas com Ecocardiograma (comportamento original)
+                        st.session_state["servicos_selecionados"] = []
+                    st.session_state["pdf_gerando"] = True
+                    st.rerun()
+
+            # ========== EXECUTAR GERAÇÃO DO PDF E OS ==========
+            if st.session_state.get("pdf_gerando"):
+                st.session_state["pdf_gerando"] = False
+
                 # Garantir tabela de referência carregada para o PDF (espécie atual)
                 esp_pdf = normalizar_especie_label(st.session_state.get("cad_especie", "Canina"))
                 if especie_is_felina(esp_pdf):
@@ -2179,9 +2322,11 @@ def render_laudos(deps=None):
                 else:
                     if st.session_state.get("df_ref") is None:
                         st.session_state["df_ref"] = carregar_tabela_referencia_cached()
-                pdf_bytes = criar_pdf()
+
+                with st.spinner("Gerando PDF..."):
+                    pdf_bytes = criar_pdf()
                 st.session_state["pdf_bytes"] = pdf_bytes
-                
+
                 # ============================================================
                 # ✅ ARQUIVA PDF, JSON, IMAGENS E SALVA NO BANCO
                 # ============================================================
@@ -2230,7 +2375,7 @@ def render_laudos(deps=None):
 
                     _ = st.success(f"PDF gerado e arquivado em: {PASTA_LAUDOS}")
 
-                    # 3b) ✅ SALVA NO BANCO (laudos_arquivos + imagens) — um único lugar, persiste na nuvem se o DB for persistente
+                    # 3b) ✅ SALVA NO BANCO (laudos_arquivos + imagens)
                     try:
                         id_arq, erro_arq = salvar_laudo_arquivo_no_banco(
                             nome_base=nome_base,
@@ -2244,21 +2389,21 @@ def render_laudos(deps=None):
                             imagens=imgs_para_banco,
                         )
                         if id_arq:
-                            _ = st.success(f"✅ Laudo e imagens salvos no banco (id {id_arq}). Disponível em Buscar exames > Exames da pasta importados.")
+                            _ = st.success(f"✅ Laudo e imagens salvos no banco (id {id_arq}).")
                         elif erro_arq:
                             _ = st.warning(f"⚠️ Laudo na pasta ok; banco: {erro_arq}")
                     except Exception as e_arq:
                         _ = st.warning(f"⚠️ Laudo na pasta ok; erro ao salvar no banco: {e_arq}")
-                    
-                    # 4) ✅ SALVA NO BANCO DE DADOS (laudos_ecocardiograma — paths)
+
+                    # 4) ✅ SALVA NO BANCO DE DADOS (laudos_ecocardiograma)
                     try:
                         laudo_id, erro = salvar_laudo_no_banco(
-                            tipo_exame="ecocardiograma",  # ← AJUSTE CONFORME O TIPO!
+                            tipo_exame="ecocardiograma",
                             dados_laudo=dados_save,
                             caminho_json=PASTA_LAUDOS / f"{nome_base}.json",
                             caminho_pdf=PASTA_LAUDOS / f"{nome_base}.pdf"
                         )
-                        
+
                         if laudo_id:
                             _ = st.success(f"✅ Laudo #{laudo_id} registrado no sistema!")
                         else:
@@ -2266,7 +2411,7 @@ def render_laudos(deps=None):
                     except Exception as e_banco:
                         _ = st.warning(f"⚠️ Erro ao registrar no banco: {e_banco}")
 
-                    # 5) ✅ CRIA ORDEM DE SERVIÇO (OS) AUTOMÁTICA NO FINANCEIRO
+                    # 5) ✅ CRIA ORDEM DE SERVIÇO (OS) NO FINANCEIRO
                     try:
                         clinica_nome = (clinica or "").strip()
                         if clinica_nome:
@@ -2280,25 +2425,43 @@ def render_laudos(deps=None):
                                 res_clinica = cursor_fin.fetchone()
                                 if res_clinica:
                                     clinica_id_os = res_clinica[0]
-                                    cursor_fin.execute(
-                                        "SELECT id, valor_base FROM servicos WHERE (ativo = 1 OR ativo IS NULL) AND (nome = 'Ecocardiograma' OR nome LIKE '%Ecocardiograma%') LIMIT 1"
-                                    )
-                                    serv_row = cursor_fin.fetchone()
-                                    if serv_row:
-                                        servico_id_os = serv_row[0]
-                                        vb, vd, vf = calcular_valor_final(servico_id_os, clinica_id_os)
-                                        # Data da coluna "Data" no financeiro = data do exame (não a data de hoje)
-                                        data_comp = _normalizar_data_str(data_exame)
-                                        descricao_os = f"Ecocardiograma - {nome_animal or 'Paciente'}"
-                                        # Não criar OS duplicada: se já existir para mesma clínica/data/descrição (ex.: gerada ao marcar agendamento como realizado)
-                                        cursor_fin.execute("""
-                                            SELECT numero_os FROM financeiro
-                                            WHERE clinica_id = ? AND data_competencia = ? AND descricao = ?
-                                            LIMIT 1
-                                        """, (clinica_id_os, data_comp, descricao_os))
-                                        if cursor_fin.fetchone():
-                                            _ = st.info("💰 OS já existente para este exame (não foi criada duplicata).")
-                                        else:
+                                    data_comp = _normalizar_data_str(data_exame)
+
+                                    # Obter serviços selecionados do session_state
+                                    servicos_selecionados = st.session_state.get("servicos_selecionados", [])
+
+                                    # Parse das opções selecionadas para obter IDs e valores
+                                    opcoes_servicos = {}
+                                    if servicos_selecionados:
+                                        cursor_fin.execute(
+                                            "SELECT id, nome, valor_base FROM servicos WHERE ativo = 1 OR ativo IS NULL"
+                                        )
+                                        for row in cursor_fin.fetchall():
+                                            opcoes_servicos[row[1]] = {"id": row[0], "valor_base": row[2]}
+
+                                    servicos_criados = []
+                                    valor_total_os = 0
+
+                                    for opt in servicos_selecionados:
+                                        # Extrair nome do serviço da opção (remove o valor entre parênteses)
+                                        nome_servico = opt.split(" (R$")[0]
+                                        if nome_servico in opcoes_servicos:
+                                            servico_info = opcoes_servicos[nome_servico]
+                                            servico_id_os = servico_info["id"]
+                                            vb, vd, vf = calcular_valor_final(servico_id_os, clinica_id_os)
+                                            descricao_os = f"{nome_servico} - {nome_animal or 'Paciente'}"
+
+                                            # Verificar se já existe
+                                            cursor_fin.execute("""
+                                                SELECT numero_os FROM financeiro
+                                                WHERE clinica_id = ? AND data_competencia = ? AND descricao = ?
+                                                LIMIT 1
+                                            """, (clinica_id_os, data_comp, descricao_os))
+                                            if cursor_fin.fetchone():
+                                                _ = st.info(f"💰 OS já existente para {nome_servico}.")
+                                                continue
+
+                                            # Criar OS para este serviço
                                             numero_os = gerar_numero_os()
                                             cursor_fin.execute("""
                                                 INSERT INTO financeiro (
@@ -2307,26 +2470,36 @@ def render_laudos(deps=None):
                                                     status_pagamento, data_competencia
                                                 ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
                                             """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
-                                            conn_fin.commit()
-                                            _ = st.success(f"💰 OS {numero_os} criada: R$ {vf:,.2f} (pendente)")
+                                            servicos_criados.append((numero_os, vf))
+                                            valor_total_os += vf
+
+                                    conn_fin.commit()
+
+                                    if servicos_criados:
+                                        os_detalhes = ", ".join([f"OS {o[0]} (R$ {o[1]:,.2f})" for o in servicos_criados])
+                                        _ = st.success(f"💰 OS(s) criada(s): {os_detalhes}")
+                                    elif not servicos_selecionados:
+                                        _ = st.info("💡 Nenhum serviço selecionado para OS.")
                                     else:
-                                        _ = st.info("💡 Cadastre o serviço 'Ecocardiograma' em Cadastros > Serviços para gerar OS automática.")
+                                        _ = st.info("💰 Todos os serviços já possuem OS para esta data.")
                                 else:
-                                    _ = st.info("💡 Cadastre a clínica com o mesmo nome em Cadastros > Clínicas Parceiras para gerar OS automática.")
+                                    _ = st.info("💡 Cadastre a clínica em Cadastros > Clínicas Parceiras para gerar OS.")
                             finally:
                                 conn_fin.close()
                     except Exception as e_os:
                         _ = st.warning(f"PDF e laudo ok; OS não criada: {e_os}")
-                        
+
                 except Exception as e:
                     _ = st.warning(f"PDF gerado, mas não consegui arquivar automaticamente: {e}")
-                # ============================================================
+
+                # Limpar state de serviços
+                st.session_state["servicos_selecionados"] = []
 
         else:
             _ = st.warning("⚠️ Você não tem permissão para gerar laudos")
-            _ = st.info("💡 Apenas cardiologistas podem gerar laudos. Contate o administrador se precisar de acesso.")
+            _ = st.info("💡 Apenas cardiologistas podem gerar laudos.")
 
-        # Download button (fora do if/else de permissão) — retorno atribuído a _ para não exibir "None"
+        # Download button
         if "pdf_bytes" in st.session_state:
             _ = st.download_button(
                 "⬇️ Baixar PDF",
