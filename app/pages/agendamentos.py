@@ -116,13 +116,10 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
 def render_agendamentos():
     st.title("📅 Gestão de Agendamentos")
 
-    # Inicializa states para modal de serviços extras
-    if "modal_servicos_realizado_open" not in st.session_state:
-        st.session_state["modal_servicos_realizado_open"] = False
-    if "servicos_extras_selecionados" not in st.session_state:
-        st.session_state["servicos_extras_selecionados"] = []
-    if "agendamento_id_pendente_realizado" not in st.session_state:
-        st.session_state["agendamento_id_pendente_realizado"] = None
+    # Inicializa states para modal de serviços extras (com .get() para evitar KeyError)
+    st.session_state.setdefault("modal_servicos_realizado_open", False)
+    st.session_state.setdefault("servicos_extras_selecionados", [])
+    st.session_state.setdefault("agendamento_id_pendente_realizado", None)
 
     tab_novo, tab_lista, tab_calendario, tab_confirmar = st.tabs([
         "➕ Novo Agendamento",
@@ -132,7 +129,7 @@ def render_agendamentos():
     ])
 
     # ========== MODAL DE SERVIÇOS EXTRAS ==========
-    if st.session_state["modal_servicos_realizado_open"]:
+    if st.session_state.get("modal_servicos_realizado_open", False):
         agend_id = st.session_state.get("agendamento_id_pendente_realizado")
         agend = None
         clinica_nome = ""
