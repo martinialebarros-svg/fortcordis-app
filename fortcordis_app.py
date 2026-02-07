@@ -89,8 +89,8 @@ try:
             with st.expander("Detalhes do erro (copie e envie para diagnóstico)"):
                 st.code("".join(_traceback_mod.format_exception(etype, value, tb)), language="text")
             st.stop()
-        except Exception:
-            pass
+        except Exception as e:
+            st.error(f"Erro ao carregar dados do laudo: {e}")
         _original_excepthook(etype, value, tb)
     sys.excepthook = _fortcordis_excepthook
 except NameError:
@@ -535,8 +535,8 @@ st.sidebar.caption("Sistema carregado")
 # Evita o Streamlit "Magic" imprimir retornos None na tela
 try:
     st.set_option("runner.magicEnabled", False)
-except Exception:
-    pass
+        except Exception as e:
+            st.error(f"Erro ao inicializar autenticação: {e}")
 
 # Dicionário padrão (zeros) para evitar KeyError antes do XML
 DADOS_DEFAULT = {
@@ -1160,10 +1160,11 @@ if uploaded_xml:
                     st.session_state["cad_clinica_id"] = clinica_id
                     st.session_state["cad_tutor_id"] = tutor_id
                     st.session_state["cad_paciente_id"] = paciente_id
-            except Exception:
-                pass
+            except Exception as e:
+                st.warning(f"Erro ao processar vínculo de paciente: {e}")
 
-        except: pass
+        except Exception:
+            pass  # Fallback para processamento XML não crítico
         st.session_state['peso_temp'] = peso
         # sincroniza o input do cadastro com o XML
         st.session_state["cad_peso"] = peso
@@ -1194,8 +1195,10 @@ if uploaded_xml:
                     except Exception:
                         p = None
                 if p and (val := p.find('aver') or p.find('val')):
-                    try: return float(val.text)
-                    except: pass
+                    try:
+                        return float(val.text)
+                    except (ValueError, TypeError):
+                        pass
             return 0.0
     
         
@@ -1337,8 +1340,8 @@ if uploaded_xml:
             st.session_state["TDI_e_in"] = float(dados.get("TDI_e", 0.0) or 0.0)
             st.session_state["TDI_a_in"] = float(dados.get("TDI_a", 0.0) or 0.0)
             st.session_state["TDI_ea_out"] = float(dados.get("TDI_e_a", 0.0) or 0.0)
-        except Exception:
-            pass
+        except Exception as e:
+            st.error(f"Erro ao carregar dados do laudo: {e}")
 
         st.session_state['dados_atuais'] = dados
 
@@ -1351,40 +1354,16 @@ try:
     from auth import inicializar_tabelas_auth, inserir_papeis_padrao
     inicializar_tabelas_auth()
     inserir_papeis_padrao()
-except Exception:
-    pass
+except Exception as e:
+    st.error(f"Erro ao inicializar autenticação: {e}")
+
 try:
     from rbac import inicializar_tabelas_permissoes, inserir_permissoes_padrao, associar_permissoes_papeis
     inicializar_tabelas_permissoes()
     inserir_permissoes_padrao()
     associar_permissoes_papeis()
-except Exception:
-    pass
-
-DADOS_DEFAULT = {
-    "Ao": 0.0, "LA": 0.0, "LA_Ao": 0.0,
-    "IVSd": 0.0, "LVIDd": 0.0, "LVPWd": 0.0,
-    "IVSs": 0.0, "LVIDs": 0.0, "LVPWs": 0.0,
-    "EDV": 0.0, "ESV": 0.0, "SV": 0.0,
-    "EF": 0.0, "FS": 0.0,
-    "MAPSE": 0.0,
-        "TAPSE": 0.0,
-"Vmax_Ao": 0.0, "Grad_Ao": 0.0,
-    "Vmax_Pulm": 0.0, "Grad_Pulm": 0.0,
-    "MV_E": 0.0, "MV_A": 0.0, "MV_E_A": 0.0,
-    "MV_DT": 0.0, "MV_Slope": 0.0,
-    "IVRT": 0.0, "E_IVRT": 0.0,
-    "TR_Vmax": 0.0,
-    "LA_FS": 0.0,
-    "AURICULAR_FLOW": 0.0, "MR_Vmax": 0.0,
-    "MR_dPdt": 0.0,
-    # Doppler tecidual (Tissue Doppler Imaging): valores manuais + razão automática
-    "TDI_e": 0.0, "TDI_a": 0.0, "TDI_e_a": 0.0,
-    "EEp": 0.0,  # E/E' (relação E/E')
-    # Artéria pulmonar / Aorta (AP/Ao)
-    "PA_AP": 0.0, "PA_AO": 0.0, "PA_AP_AO": 0.0,
-    "Delta_D": 0.0, "DIVEdN": 0.0
-}
+except Exception as e:
+    st.error(f"Erro ao inicializar permissões RBAC: {e}")
 
 
 if "dados_atuais" not in st.session_state:
@@ -1406,10 +1385,6 @@ if "cad_especie" not in st.session_state or not str(st.session_state.get("cad_es
 ARQUIVO_FRASES = str((Path.home() / "FortCordis" / "frases_personalizadas.json"))
 Path(ARQUIVO_FRASES).parent.mkdir(parents=True, exist_ok=True)
 # ARQUIVO_REF, ARQUIVO_REF_FELINOS, PASTA_LAUDOS vêm de app.config
-
-import unicodedata
-from datetime import datetime, date
-from pathlib import Path
 
 # Novas pastas para os módulos de gestão
 PASTA_PRESCRICOES = Path.home() / "FortCordis" / "Prescricoes"

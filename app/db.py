@@ -66,13 +66,16 @@ def _db_conn_safe():
                         pass
             path.parent.mkdir(parents=True, exist_ok=True)
             conn = sqlite3.connect(str(DB_PATH), timeout=10, check_same_thread=False)
+            # Valida que a conexão realmente funciona
+            conn.execute("SELECT 1")
             conn.row_factory = sqlite3.Row
             if "db_was_recovered" not in st.session_state:
                 st.session_state["db_was_recovered"] = True
             logger.warning("Banco reiniciado após falha; backup em %s", backup_path or "N/A")
             return conn
-        except Exception:
-            raise
+        except Exception as e:
+            logger.error("Falha ao recuperar banco: %s", e)
+            raise RuntimeError(f"Não foi possível recuperar o banco de dados: {e}")
 
 
 @st.cache_resource(show_spinner=False, max_entries=1)
