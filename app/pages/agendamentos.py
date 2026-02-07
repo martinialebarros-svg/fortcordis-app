@@ -121,6 +121,92 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
         return None, str(e)
 
 
+def _criar_os_unica_com_servicos(agendamento_id, servicos_selecionados, servicos_db, tabela_preco_id):
+    """Cria uma única OS com todos os serviços selecionados."""
+    from fortcordis_modules.database import (
+        buscar_agendamento_por_id,
+        garantir_colunas_financeiro,
+        gerar_numero_os,
+    )
+    garantir_colunas_financeiro()
+    agend = buscar_agendamento_por_id(agendamento_id)
+    if not agend:
+        return None, "Agendamento não encontrado."
+    clinica_nome = (agend.get("clinica") or "").strip()
+    if not clinica_nome:
+        return None, "Clínica não informada."
+
+    conn = sqlite3.connect(str(DB_PATH))
+    cursor = conn.cursor()
+    try:
+        # Garantir que a coluna exista
+        cursor.execute("PRAGMA table_info(clinicas_parceiras)")
+        cols = [r[1] for r in cursor.fetchall()]
+        if "tabela_preco_id" not in cols:
+            cursor.execute("ALTER TABLE clinicas_parceiras ADD COLUMN tabela_preco_id INTEGER")
+
+        # Verificar ou cadastrar clínica
+        cursor.execute(
+            "SELECT id FROM clinicas_parceiras WHERE nome = ? AND (ativo = 1 OR ativo IS NULL) LIMIT 1",
+            (clinica_nome,),
+        )
+        row_cli = cursor.fetchone()
+        if not row_cli:
+            cursor.execute(
+                "INSERT INTO clinicas_parceiras (nome, cidade, tabela_preco_id) VALUES (?, 'Fortaleza', 1)",
+                (clinica_nome,)
+            )
+            clinica_id = cursor.lastrowid
+        else:
+            clinica_id = row_cli[0]
+
+        data_atend = agend.get("data") or agend.get("data_agendamento")
+        data_comp = str(data_atend)[:10] if data_atend else datetime.now().strftime("%Y-%m-%d")
+
+        # Calcular total e criar descrição com todos os serviços
+        total = 0
+        servicos_formatados = []
+        for opt in servicos_selecionados:
+            nome_servico = opt.split(" (R$")[0]
+            if nome_servico in servicos_db:
+                servico_info = servicos_db[nome_servico]
+                # Buscar valor da tabela de preços
+                cursor.execute("SELECT valor FROM servico_preco WHERE servico_id = ? AND tabela_preco_id = ?", (servico_info["id"], tabela_preco_id))
+                row_preco = cursor.fetchone()
+                valor = float(row_preco[0]) if row_preco else servico_info["valor_base"]
+                total += valor
+                servicos_formatados.append(f"{nome_servico} (R$ {valor:,.2f})")
+
+        if not servicos_formatados:
+            conn.close()
+            return None, "Nenhum serviço válido selecionado."
+
+        descricao = f"{agend.get('paciente', '')}: " + " | ".join(servicos_formatados)
+
+        # Verificar se já existe OS para esta descrição
+        cursor.execute("""
+            SELECT numero_os FROM financeiro
+            WHERE clinica_id = ? AND data_competencia = ? AND descricao = ?
+            LIMIT 1
+        """, (clinica_id, data_comp, descricao))
+        if cursor.fetchone():
+            conn.close()
+            return None, "already_exists"
+
+        numero_os = gerar_numero_os()
+        cursor.execute("""
+            INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
+            VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)
+        """, (agendamento_id, clinica_id, numero_os, descricao, total, total, data_comp))
+        conn.commit()
+        conn.close()
+        return numero_os, None
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return None, str(e)
+
+
 def render_agendamentos():
     st.title("📅 Gestão de Agendamentos")
 
@@ -505,17 +591,7 @@ def render_agendamentos():
                             if st.session_state.get("agendamento_id_pendente_realizado") == agend['id']:
                                 servicos_extras = st.session_state.get("servicos_extras_selecionados", [])
                                 if servicos_extras:
-                                    # Criar OS principal
-                                    numero_os, erro_os = criar_os_ao_marcar_realizado(agend['id'])
-                                    if erro_os == "already_exists" and numero_os:
-                                        st.info(f"OS {numero_os} já existia.")
-                                    elif erro_os:
-                                        st.warning(f"OS principal não criada: {erro_os}")
-                                    elif numero_os:
-                                        st.success(f"OS {numero_os} criada.")
-
-                                    # Criar OS para cada serviço extra
-                                    from fortcordis_modules.database import get_conn
+                                    # Buscar dados dos serviços
                                     conn = sqlite3.connect(str(DB_PATH))
                                     cursor = conn.cursor()
                                     cursor.execute("SELECT id, nome, valor_base FROM servicos WHERE ativo = 1 OR ativo IS NULL")
@@ -525,25 +601,16 @@ def render_agendamentos():
                                     tabela_preco_id = row_cli[1] if row_cli else 1
                                     conn.close()
 
-                                    for opt in servicos_extras:
-                                        nome_servico = opt.split(" (R$")[0]
-                                        if nome_servico in servicos_db:
-                                            servico_info = servicos_db[nome_servico]
-                                            # Buscar valor da tabela de preços
-                                            conn2 = sqlite3.connect(str(DB_PATH))
-                                            cursor2 = conn2.cursor()
-                                            cursor2.execute("SELECT valor FROM servico_preco WHERE servico_id = ? AND tabela_preco_id = ?", (servico_info["id"], tabela_preco_id))
-                                            row_preco = cursor2.fetchone()
-                                            valor_final = float(row_preco[0]) if row_preco else servico_info["valor_base"]
-                                            conn2.close()
-
-                                            num_os_extra, err_extra = _criar_os_servico_extra(agend['id'], nome_servico, valor_final)
-                                            if err_extra == "already_exists":
-                                                st.info(f"💰 OS já existente para {nome_servico}.")
-                                            elif err_extra:
-                                                st.warning(f"Erro ao criar OS para {nome_servico}: {err_extra}")
-                                            else:
-                                                st.success(f"💰 OS extra {num_os_extra} criada para {nome_servico} (R$ {valor_final:,.2f})")
+                                    # Criar uma única OS com todos os serviços
+                                    numero_os, erro = _criar_os_unica_com_servicos(
+                                        agend['id'], servicos_extras, servicos_db, tabela_preco_id
+                                    )
+                                    if erro == "already_exists":
+                                        st.info("OS com esses serviços já existe.")
+                                    elif erro:
+                                        st.warning(f"Erro ao criar OS: {erro}")
+                                    else:
+                                        st.success(f"💰 OS {numero_os} criada com {len(servicos_extras)} serviço(s)!")
 
                                     # Limpar states e marcar como realizado
                                     st.session_state["agendamento_id_pendente_realizado"] = None
