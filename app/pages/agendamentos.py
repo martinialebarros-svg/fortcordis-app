@@ -72,6 +72,12 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
     conn = sqlite3.connect(str(DB_PATH))
     cursor = conn.cursor()
     try:
+        # Garantir que a coluna exista
+        cursor.execute("PRAGMA table_info(clinicas_parceiras)")
+        cols = [r[1] for r in cursor.fetchall()]
+        if "tabela_preco_id" not in cols:
+            cursor.execute("ALTER TABLE clinicas_parceiras ADD COLUMN tabela_preco_id INTEGER")
+
         # Verificar ou cadastrar clínica
         cursor.execute(
             "SELECT id FROM clinicas_parceiras WHERE nome = ? AND (ativo = 1 OR ativo IS NULL) LIMIT 1",
