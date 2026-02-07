@@ -127,7 +127,6 @@ def render_agendamentos():
                 except sqlite3.OperationalError:
                     cursor_temp.execute("SELECT nome FROM clinicas_parceiras ORDER BY nome")
                 lista_clinicas = [row[0] for row in cursor_temp.fetchall()]
-                conn_temp.close()
                 # Botão "Cadastrar nova clínica" sempre visível no topo (fora do dropdown)
                 with st.expander("➕ Cadastrar Nova Clínica", expanded=False):
                     st.caption("Não encontrou a clínica na lista? Cadastre aqui.")
@@ -136,8 +135,8 @@ def render_agendamentos():
                     nova_clinica_tel = st.text_input("Telefone", key="nova_clinica_tel_agend")
                     # Seleção de tabela de preços
                     try:
-                        conn_temp.execute("SELECT id, nome FROM tabelas_preco ORDER BY id")
-                        tabelas_list = conn_temp.fetchall()
+                        cursor_temp.execute("SELECT id, nome FROM tabelas_preco ORDER BY id")
+                        tabelas_list = cursor_temp.fetchall()
                         tabelas_opcoes = {f"ID {t[0]}: {t[1]}": t[0] for t in tabelas_list}
                         tabela_selecionada = st.selectbox(
                             "Tabela de Preços",
@@ -161,6 +160,7 @@ def render_agendamentos():
                                 st.error(f"❌ {msg}")
                         else:
                             st.error("Nome da clínica é obrigatório.")
+                conn_temp.close()
                 # Dropdown: só clínicas cadastradas + digitar manualmente
                 opcoes_clinica = (lista_clinicas or []) + ["📝 Digitar manualmente"]
                 clinica_agend_sel = st.selectbox(
