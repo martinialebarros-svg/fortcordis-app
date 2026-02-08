@@ -2476,51 +2476,54 @@ def render_laudos(deps=None):
                                         for row in cursor_fin.fetchall():
                                             opcoes_servicos[row[1]] = {"id": row[0], "valor_base": row[2]}
 
-                                    servicos_criados = []
-                                    valor_total_os = 0
+                                    # Agregar todos os serviços em uma única OS
+                                    servicos_validos = []
+                                    total_bruto = 0
+                                    total_desconto = 0
+                                    total_final = 0
 
                                     for opt in servicos_selecionados:
-                                        # Extrair nome do serviço da opção (remove o valor entre parênteses)
                                         nome_servico = opt.split(" (R$")[0]
                                         if nome_servico in opcoes_servicos:
                                             servico_info = opcoes_servicos[nome_servico]
                                             servico_id_os = servico_info["id"]
                                             vb, vd, vf = calcular_valor_final(servico_id_os, clinica_id_os)
-                                            descricao_os = f"{nome_servico} - {nome_animal or 'Paciente'}"
+                                            servicos_validos.append((nome_servico, vb, vd, vf))
+                                            total_bruto += vb
+                                            total_desconto += vd
+                                            total_final += vf
 
-                                            # Verificar se já existe
-                                            cursor_fin.execute("""
-                                                SELECT numero_os FROM financeiro
-                                                WHERE clinica_id = ? AND data_competencia = ? AND descricao = ?
-                                                LIMIT 1
-                                            """, (clinica_id_os, data_comp, descricao_os))
-                                            if cursor_fin.fetchone():
-                                                _ = st.info(f"💰 OS já existente para {nome_servico}.")
-                                                continue
+                                    if servicos_validos:
+                                        # Montar descrição combinada: "Paciente: Serv1 (R$ X) | Serv2 (R$ Y)"
+                                        partes = [f"{s[0]} (R$ {s[3]:,.2f})" for s in servicos_validos]
+                                        descricao_os = f"{nome_animal or 'Paciente'}: " + " | ".join(partes)
 
-                                            # Criar OS para este serviço
+                                        # Verificar se já existe OS idêntica
+                                        cursor_fin.execute("""
+                                            SELECT numero_os FROM financeiro
+                                            WHERE clinica_id = ? AND data_competencia = ? AND descricao = ?
+                                            LIMIT 1
+                                        """, (clinica_id_os, data_comp, descricao_os))
+                                        if cursor_fin.fetchone():
+                                            _ = st.info("💰 OS já existente para estes serviços.")
+                                        else:
                                             numero_os = gerar_numero_os()
                                             inserir_financeiro(
                                                 cursor_fin,
                                                 clinica_id=clinica_id_os,
                                                 numero_os=numero_os,
                                                 descricao=descricao_os,
-                                                valor_bruto=vb,
-                                                valor_desconto=vd,
-                                                valor_final=vf,
+                                                valor_bruto=total_bruto,
+                                                valor_desconto=total_desconto,
+                                                valor_final=total_final,
                                                 data_competencia=data_comp,
                                             )
                                             conn_fin.commit()
-                                            servicos_criados.append((numero_os, vf))
-                                            valor_total_os += vf
-
-                                    if servicos_criados:
-                                        os_detalhes = ", ".join([f"OS {o[0]} (R$ {o[1]:,.2f})" for o in servicos_criados])
-                                        _ = st.success(f"💰 OS(s) criada(s): {os_detalhes}")
+                                            _ = st.success(f"💰 OS {numero_os} criada: R$ {total_final:,.2f}")
                                     elif not servicos_selecionados:
                                         _ = st.info("💡 Nenhum serviço selecionado para OS.")
                                     else:
-                                        _ = st.info("💰 Todos os serviços já possuem OS para esta data.")
+                                        _ = st.info("💡 Nenhum serviço válido encontrado.")
                                 else:
                                     _ = st.info("💡 Cadastre a clínica em Cadastros > Clínicas Parceiras para gerar OS.")
                             finally:
