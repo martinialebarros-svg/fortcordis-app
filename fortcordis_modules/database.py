@@ -709,7 +709,7 @@ def calcular_valor_final(servico_id, clinica_id):
     try:
         cursor.execute("SELECT tabela_preco_id FROM clinicas_parceiras WHERE id = ?", (clinica_id,))
         row_tab = cursor.fetchone()
-        tabela_preco_id = row_tab[0] if row_tab and row_tab[0] else None
+        tabela_preco_id = row_tab[0] if row_tab and row_tab[0] else 1
         if tabela_preco_id:
             cursor.execute(
                 "SELECT valor FROM servico_preco WHERE servico_id = ? AND tabela_preco_id = ? LIMIT 1",
