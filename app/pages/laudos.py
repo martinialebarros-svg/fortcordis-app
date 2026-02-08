@@ -2342,7 +2342,7 @@ def render_laudos(deps=None):
                             st.session_state["modal_servicos_open"] = True
                         else:
                             # Gerar apenas com Ecocardiograma (comportamento original)
-                            st.session_state["servicos_selecionados"] = []
+                            st.session_state["servicos_selecionados"] = ["Ecocardiograma"]
                             st.session_state["pdf_gerando"] = True
                         st.rerun()
 
