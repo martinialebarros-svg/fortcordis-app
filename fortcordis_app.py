@@ -627,6 +627,14 @@ with st.sidebar.expander("🔎 Filtros globais", expanded=False):
     periodos_disponiveis = ["Hoje", "7 dias", "30 dias"]
     status_disponiveis = ["Agendado", "Confirmado", "Realizado", "Rascunho", "Finalizado", "Pendente", "Pago"]
 
+    # Chaves canônicas consumidas pelas páginas
+    if "filtro_busca_global" not in st.session_state:
+        st.session_state["filtro_busca_global"] = ""
+    if st.session_state.get("filtro_periodo_global") not in periodos_disponiveis:
+        st.session_state["filtro_periodo_global"] = "Hoje"
+    if "filtro_status_global" not in st.session_state:
+        st.session_state["filtro_status_global"] = ["Agendado", "Confirmado", "Realizado"]
+
     # Chaves de UI (evita conflito caso o valor canônico seja alterado em outro ponto)
     if "ui_filtro_busca_global" not in st.session_state:
         st.session_state["ui_filtro_busca_global"] = st.session_state.get("filtro_busca_global", "")
@@ -637,19 +645,32 @@ with st.sidebar.expander("🔎 Filtros globais", expanded=False):
         status_inicial = st.session_state.get("filtro_status_global", ["Agendado", "Confirmado", "Realizado"])
         st.session_state["ui_filtro_status_global"] = [s for s in status_inicial if s in status_disponiveis] or ["Agendado", "Confirmado", "Realizado"]
 
+    # Mantém canônico sincronizado sem escrever na própria key do widget
+    st.session_state["filtro_busca_global"] = st.session_state.get("ui_filtro_busca_global", "")
+    st.session_state["filtro_periodo_global"] = st.session_state.get("ui_filtro_periodo_global", "Hoje")
+    st.session_state["filtro_status_global"] = st.session_state.get("ui_filtro_status_global", ["Agendado", "Confirmado", "Realizado"])
+
+    def _sync_filtros_globais_callback():
+        st.session_state["filtro_busca_global"] = st.session_state.get("ui_filtro_busca_global", "")
+        st.session_state["filtro_periodo_global"] = st.session_state.get("ui_filtro_periodo_global", "Hoje")
+        st.session_state["filtro_status_global"] = st.session_state.get("ui_filtro_status_global", ["Agendado", "Confirmado", "Realizado"])
+
     st.text_input(
         "Busca rápida (paciente/tutor/clínica)",
-        key="ui_filtro_busca_global"
+        key="ui_filtro_busca_global",
+        on_change=_sync_filtros_globais_callback,
     )
     st.selectbox(
         "Período",
         periodos_disponiveis,
-        key="ui_filtro_periodo_global"
+        key="ui_filtro_periodo_global",
+        on_change=_sync_filtros_globais_callback,
     )
     st.multiselect(
         "Status",
         status_disponiveis,
-        key="ui_filtro_status_global"
+        key="ui_filtro_status_global",
+        on_change=_sync_filtros_globais_callback,
     )
 
 st.sidebar.markdown("---")
