@@ -8,12 +8,12 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-# Banco: pasta do projeto (fortcordis_modules/../fortcordis.db) ou variável de ambiente
+# Banco: pasta do projeto (fortcordis_modules/../data/fortcordis.db) ou variável de ambiente
 if os.environ.get("FORTCORDIS_DB_PATH"):
     DB_PATH = Path(os.environ["FORTCORDIS_DB_PATH"])
 else:
     _root = Path(__file__).resolve().parent.parent
-    DB_PATH = _root / "fortcordis.db"
+    DB_PATH = _root / "data" / "fortcordis.db"
 
 # Garante que a pasta do banco existe (para ambientes de deploy)
 if DB_PATH.parent != Path("."):
@@ -451,8 +451,38 @@ def inicializar_banco():
             if sid:
                 cursor.execute("INSERT OR IGNORE INTO servico_preco (servico_id, tabela_preco_id, valor) VALUES (?, 4, ?)", (sid, valor))
     
+    # Migrar dados da tabela legada 'clinicas' para 'clinicas_parceiras'
+    _migrar_clinicas_legadas(conn)
+
     conn.commit()
     conn.close()
+
+
+def _migrar_clinicas_legadas(conn):
+    """Copia clínicas da tabela legada 'clinicas' para 'clinicas_parceiras' (uma única vez)."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM clinicas")
+        total_legado = cursor.fetchone()[0]
+    except Exception:
+        return  # tabela 'clinicas' não existe, nada a migrar
+
+    if total_legado == 0:
+        return
+
+    cursor.execute("SELECT COUNT(*) FROM clinicas_parceiras")
+    if cursor.fetchone()[0] > 0:
+        return  # já migrado
+
+    try:
+        cursor.execute("""
+            INSERT OR IGNORE INTO clinicas_parceiras (nome, endereco, bairro, cidade, telefone, whatsapp, email, cnpj, ativo)
+            SELECT nome, endereco, bairro, cidade, telefone, whatsapp, email, cnpj, COALESCE(ativo, 1)
+            FROM clinicas
+            WHERE nome IS NOT NULL AND nome != ''
+        """)
+    except Exception:
+        pass
 
 
 def garantir_colunas_financeiro():
