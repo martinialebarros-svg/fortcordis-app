@@ -900,6 +900,26 @@ def render_configuracoes():
     # ABA: IMPORTAR DADOS (backup local após deploy)
     # ============================================================================
     with tab_importar:
+        st.subheader("📥 Importar / Exportar dados")
+
+        # --- Exportar banco atual ---
+        st.markdown("#### 📤 Exportar banco de dados atual")
+        st.caption("Baixe o banco de dados atual para backup ou para atualizar o seed do repositório.")
+        if DB_PATH.exists():
+            with open(str(DB_PATH), "rb") as _f:
+                _db_bytes = _f.read()
+            st.download_button(
+                label="Baixar banco de dados (.db)",
+                data=_db_bytes,
+                file_name=f"fortcordis_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
+                mime="application/octet-stream",
+            )
+            st.info(f"Tamanho: {len(_db_bytes) / 1024:.0f} KB")
+        else:
+            st.warning("Banco de dados não encontrado.")
+
+        st.markdown("---")
+
         st.subheader("📥 Importar dados de backup")
         st.caption(
             "Após o deploy, o sistema fica vazio. Gere um backup no seu computador com o script "
