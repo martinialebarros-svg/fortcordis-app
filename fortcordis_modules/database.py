@@ -4,6 +4,7 @@ Inicializa e gerencia todas as tabelas do sistema
 """
 
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -15,9 +16,17 @@ else:
     _root = Path(__file__).resolve().parent.parent
     DB_PATH = _root / "data" / "fortcordis.db"
 
+# Seed: snapshot do banco commitado no repositório (usado em deploys com disco efêmero)
+SEED_PATH = Path(__file__).resolve().parent.parent / "data" / "fortcordis_seed.db"
+
 # Garante que a pasta do banco existe (para ambientes de deploy)
 if DB_PATH.parent != Path("."):
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# Auto-restore: se o banco não existe e o seed está disponível, copia o seed
+if not DB_PATH.exists() and SEED_PATH.exists():
+    shutil.copy2(str(SEED_PATH), str(DB_PATH))
+    print(f"[Fort Cordis] Banco restaurado a partir do seed: {SEED_PATH}")
 
 
 def get_conn(timeout_seconds=15):
