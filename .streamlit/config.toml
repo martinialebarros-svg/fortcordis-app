@@ -1,22 +1,13 @@
-# Fort Cordis - Configuração do Streamlit
-# Design: tema limpo e profissional (saúde/cardiologia)
-
-[runner]
-magicEnabled = false
-
-[browser]
-gatherUsageStats = false
-
 [theme]
-# Paleta suave: azul escuro (confiança/saúde) e tons neutros
-primaryColor = "#2c5282"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f7fafc"
-textColor = "#2d3748"
+base = "light"
+primaryColor = "#1D4ED8"
+backgroundColor = "#F5F8FF"
+secondaryBackgroundColor = "#EAF1FF"
+textColor = "#10213F"
 font = "sans serif"
 
 [server]
-# Melhor experiência em telas grandes
 headless = true
-# Limite de upload (MB) — backup com laudos em BLOB pode passar de 500MB
-maxUploadSize = 1000
+
+[browser]
+gatherUsageStats = false

@@ -110,6 +110,17 @@ def render_laudos(deps=None):
 
     st.title("🩺 Sistema de Laudos e Exames")
 
+    etapas_fluxo = ["Cadastro", "Exame", "Interpretação", "Laudo", "Cobrança/OS"]
+    etapa_atual = st.select_slider(
+        "Fluxo guiado",
+        options=etapas_fluxo,
+        value=st.session_state.get("etapa_laudo_atual", "Cadastro"),
+        key="etapa_laudo_atual",
+        help="Siga as etapas para reduzir erro de preenchimento e retrabalho.",
+    )
+    progresso = (etapas_fluxo.index(etapa_atual) + 1) / len(etapas_fluxo)
+    st.progress(progresso, text=f"Etapa {etapas_fluxo.index(etapa_atual)+1}/{len(etapas_fluxo)}: {etapa_atual}")
+
     if st.session_state.pop("__exame_carregado_ok", False):
         st.success("Exame carregado com sucesso! Confira as abas Cadastro, Medidas, Qualitativa e Imagens.")
 
@@ -2288,9 +2299,11 @@ def render_laudos(deps=None):
 
             # ========== BOTÃO PRINCIPAL ==========
             with st.form("form_gerar_pdf"):
-                col_btn, col_check = st.columns([1, 2])
+                col_draft, col_btn, col_check = st.columns([1, 1, 2])
+                with col_draft:
+                    salvar_rascunho = st.form_submit_button("💾 Salvar rascunho")
                 with col_btn:
-                    gerar_clicado = st.form_submit_button("🧾 Gerar PDF", type="primary")
+                    gerar_clicado = st.form_submit_button("🧾 Finalizar e Gerar PDF", type="primary")
                 with col_check:
                     # Checkbox para adicionar mais serviços
                     adicionar_servicos = st.checkbox(
@@ -2298,15 +2311,33 @@ def render_laudos(deps=None):
                         key="chk_adicionar_servicos"
                     )
 
+                if salvar_rascunho:
+                    st.session_state["laudo_status"] = "Rascunho"
+                    try:
+                        st.toast("Rascunho salvo com sucesso.", icon="💾")
+                    except Exception:
+                        st.success("Rascunho salvo com sucesso.")
+
                 if gerar_clicado:
-                    if adicionar_servicos:
-                        # Abrir modal de seleção de serviços (ainda NÃO gera PDF)
-                        st.session_state["modal_servicos_open"] = True
+                    campos_obrigatorios = {
+                        "Paciente": (nome_animal or "").strip(),
+                        "Tutor": (tutor or "").strip(),
+                        "Clínica": (clinica or "").strip(),
+                        "Data do exame": (str(data_exame) or "").strip(),
+                    }
+                    faltando = [rotulo for rotulo, valor in campos_obrigatorios.items() if not valor]
+                    if faltando:
+                        st.error(f"Preencha os campos obrigatórios antes de finalizar: {', '.join(faltando)}")
                     else:
-                        # Gerar apenas com Ecocardiograma (comportamento original)
-                        st.session_state["servicos_selecionados"] = []
-                        st.session_state["pdf_gerando"] = True
-                    st.rerun()
+                        st.session_state["laudo_status"] = "Finalizado"
+                        if adicionar_servicos:
+                            # Abrir modal de seleção de serviços (ainda NÃO gera PDF)
+                            st.session_state["modal_servicos_open"] = True
+                        else:
+                            # Gerar apenas com Ecocardiograma (comportamento original)
+                            st.session_state["servicos_selecionados"] = []
+                            st.session_state["pdf_gerando"] = True
+                        st.rerun()
 
             # ========== EXECUTAR GERAÇÃO DO PDF E OS ==========
             if st.session_state.get("pdf_gerando"):
