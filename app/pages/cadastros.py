@@ -255,7 +255,38 @@ def render_cadastros():
                 servicos_display['Valor Base'] = servicos_display['Valor Base'].apply(lambda x: f"R$ {float(x):,.2f}")
                 st.dataframe(servicos_display, use_container_width=True, hide_index=True)
             else:
-                st.warning("⚠️ Execute o script inicializar_dados.py ou reinicie o app para popular os serviços")
+                st.info("Nenhum serviço cadastrado ainda.")
+
+            # Formulário para adicionar novo serviço
+            if verificar_permissao("cadastros", "criar"):
+                with st.expander("➕ Adicionar Novo Serviço", expanded=servicos.empty):
+                    col_s1, col_s2 = st.columns(2)
+                    with col_s1:
+                        novo_serv_nome = st.text_input("Nome do Serviço *", key="novo_serv_nome",
+                                                        placeholder="Ex: Holter 24h")
+                    with col_s2:
+                        novo_serv_valor = st.number_input("Valor Base (R$)", min_value=0.0, value=0.0,
+                                                           step=10.0, format="%.2f", key="novo_serv_valor")
+                    novo_serv_desc = st.text_input("Descrição", key="novo_serv_desc",
+                                                    placeholder="Breve descrição do serviço")
+
+                    if st.button("✅ Cadastrar Serviço", type="primary", key="btn_cadastrar_servico"):
+                        if not novo_serv_nome.strip():
+                            st.error("❌ Preencha o nome do serviço")
+                        else:
+                            try:
+                                cursor_s = conn.cursor()
+                                cursor_s.execute("""
+                                    INSERT INTO servicos (nome, descricao, valor_base, ativo, created_at, updated_at)
+                                    VALUES (?, ?, ?, 1, datetime('now'), datetime('now'))
+                                """, (novo_serv_nome.strip(), novo_serv_desc.strip(), novo_serv_valor))
+                                conn.commit()
+                                st.success(f"✅ Serviço '{novo_serv_nome}' cadastrado!")
+                                st.rerun()
+                            except sqlite3.IntegrityError:
+                                st.error(f"❌ Serviço '{novo_serv_nome}' já existe")
+                            except Exception as e:
+                                st.error(f"❌ Erro ao cadastrar: {e}")
             
             # Tabelas de preço (valores por serviço por tabela) — com edição direta
             st.markdown("---")
