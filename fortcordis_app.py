@@ -27,15 +27,28 @@ _db_path = _project_root / "data" / "fortcordis.db"
 _seed_path = _project_root / "data" / "fortcordis_seed.db"
 _db_path.parent.mkdir(parents=True, exist_ok=True)
 
-if not _db_path.exists() and _seed_path.exists():
+def _banco_precisa_seed():
+    """Verifica se o banco precisa ser restaurado do seed."""
+    if not _db_path.exists():
+        return True
+    # Se o banco existe mas está vazio (sem usuários), também precisa do seed
+    try:
+        conn = sqlite3.connect(str(_db_path))
+        count = conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]
+        conn.close()
+        return count == 0
+    except Exception:
+        return True
+
+if _seed_path.exists() and _banco_precisa_seed():
     shutil.copy2(str(_seed_path), str(_db_path))
     print(f"[Fort Cordis] Banco restaurado a partir do seed ({_seed_path.stat().st_size} bytes)")
 elif not _db_path.exists():
     print("[Fort Cordis] AVISO: Banco nao existe e seed nao encontrado!")
 else:
-    print(f"[Fort Cordis] Banco ja existe ({_db_path.stat().st_size} bytes), seed nao necessario")
+    print(f"[Fort Cordis] Banco OK ({_db_path.stat().st_size} bytes)")
 
-del _project_root, _db_path, _seed_path
+del _project_root, _db_path, _seed_path, _banco_precisa_seed
 
 # ============================================================
 # VERSÃO E CONFIG (app/config.py)
