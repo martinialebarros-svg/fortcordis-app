@@ -75,16 +75,44 @@ CSS_GLOBAL = """
     h3 { font-size: 1.08rem !important; font-weight: 600 !important; color: #223555 !important; }
 
     [data-testid="stSidebar"] { background: linear-gradient(180deg, #16336b 0%, #1d4ed8 100%); border-right: 1px solid rgba(255,255,255,0.08); }
-    [data-testid="stSidebar"] * { color: #f8fbff; }
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #ffffff !important; }
-    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label, [data-testid="stSidebar"] li { color: #f0f4ff !important; }
-    [data-testid="stSidebar"] .stCaptionContainer { color: rgba(248, 251, 255, 0.75) !important; }
-    [data-testid="stSidebar"] .stMarkdown { color: #f0f4ff !important; }
-    [data-testid="stSidebar"] .stButton > button { color: #ffffff !important; border-color: rgba(255,255,255,0.3); }
-    [data-testid="stSidebar"] .stButton > button:hover { background: rgba(255,255,255,0.15); }
-    [data-testid="stSidebar"] .stSelectbox label, [data-testid="stSidebar"] .stMultiSelect label, [data-testid="stSidebar"] .stTextInput label, [data-testid="stSidebar"] .stDateInput label { color: #e0e8ff !important; }
-    [data-testid="stSidebar"] [data-baseweb="select"] span { color: #ffffff !important; }
-    [data-testid="stSidebar"] .stAlert p { color: #10213f !important; }
+
+    /* Sidebar: forçar texto branco em todos os containers de markdown */
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] { color: #ffffff !important; }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] * { color: #ffffff !important; }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 { color: #ffffff !important; }
+
+    /* Sidebar: captions (email, versão) */
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: rgba(240, 244, 255, 0.8) !important; }
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] * { color: rgba(240, 244, 255, 0.8) !important; }
+
+    /* Sidebar: botões (Gerar Texto, Sair, etc.) */
+    [data-testid="stSidebar"] button { color: #ffffff !important; border-color: rgba(255,255,255,0.35) !important; }
+    [data-testid="stSidebar"] button * { color: #ffffff !important; }
+    [data-testid="stSidebar"] button p { color: #ffffff !important; }
+    [data-testid="stSidebar"] button:hover { background: rgba(255,255,255,0.15) !important; }
+
+    /* Sidebar: labels de widgets */
+    [data-testid="stSidebar"] label { color: #e0e8ff !important; }
+    [data-testid="stSidebar"] label * { color: #e0e8ff !important; }
+
+    /* Sidebar: selectbox/dropdown - valor selecionado visível */
+    [data-testid="stSidebar"] [data-baseweb="select"] { color: #ffffff !important; }
+    [data-testid="stSidebar"] [data-baseweb="select"] * { color: #ffffff !important; }
+    [data-testid="stSidebar"] [data-baseweb="select"] svg { fill: #ffffff !important; }
+
+    /* Sidebar: slider labels */
+    [data-testid="stSidebar"] [data-testid="stSlider"] * { color: #ffffff !important; }
+
+    /* Sidebar: radio labels */
+    [data-testid="stSidebar"] [role="radiogroup"] label * { color: #f0f4ff !important; }
+
+    /* Sidebar: texto genérico de fallback */
+    [data-testid="stSidebar"] span, [data-testid="stSidebar"] p { color: #f0f4ff !important; }
+
+    /* Sidebar: alerts mantêm cor escura (têm fundo claro próprio) */
+    [data-testid="stSidebar"] [data-testid="stAlert"] * { color: #10213f !important; }
 
     [data-testid="stMetric"] {
         background: var(--fc-surface);
