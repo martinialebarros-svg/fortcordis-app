@@ -31,7 +31,7 @@ from app.laudos_helpers import (
     obter_laudo_arquivo_por_id,
     restaurar_laudo_para_pasta,
 )
-from fortcordis_modules.database import garantir_colunas_financeiro
+from fortcordis_modules.database import garantir_colunas_financeiro, inserir_financeiro
 from modules.rbac import verificar_permissao
 
 
@@ -2500,26 +2500,16 @@ def render_laudos(deps=None):
 
                                             # Criar OS para este serviço
                                             numero_os = gerar_numero_os()
-                                            # Verificar se tabela tem created_at/updated_at (NOT NULL em DBs legados)
-                                            cursor_fin.execute("PRAGMA table_info(financeiro)")
-                                            _fin_cols = {r[1].lower() for r in cursor_fin.fetchall()}
-                                            if "created_at" in _fin_cols:
-                                                cursor_fin.execute("""
-                                                    INSERT INTO financeiro (
-                                                        clinica_id, numero_os, descricao,
-                                                        valor_bruto, valor_desconto, valor_final,
-                                                        status_pagamento, data_competencia,
-                                                        created_at, updated_at
-                                                    ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?, datetime('now'), datetime('now'))
-                                                """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
-                                            else:
-                                                cursor_fin.execute("""
-                                                    INSERT INTO financeiro (
-                                                        clinica_id, numero_os, descricao,
-                                                        valor_bruto, valor_desconto, valor_final,
-                                                        status_pagamento, data_competencia
-                                                    ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-                                                """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
+                                            inserir_financeiro(
+                                                cursor_fin,
+                                                clinica_id=clinica_id_os,
+                                                numero_os=numero_os,
+                                                descricao=descricao_os,
+                                                valor_bruto=vb,
+                                                valor_desconto=vd,
+                                                valor_final=vf,
+                                                data_competencia=data_comp,
+                                            )
                                             conn_fin.commit()
                                             servicos_criados.append((numero_os, vf))
                                             valor_total_os += vf

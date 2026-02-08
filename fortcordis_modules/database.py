@@ -646,6 +646,27 @@ def gerar_numero_os():
         ultimo_seq = 0
     return f"{prefixo}{(ultimo_seq + 1):05d}"
 
+
+def inserir_financeiro(cursor, *, clinica_id, numero_os, descricao, valor_bruto, valor_desconto=0, valor_final, data_competencia, agendamento_id=None):
+    """INSERT dinâmico na tabela financeiro — adapta às colunas que existem no banco."""
+    cursor.execute("PRAGMA table_info(financeiro)")
+    _cols_existentes = {r[1].lower() for r in cursor.fetchall()}
+    _now = datetime.now().isoformat()
+    cols = ["clinica_id", "numero_os", "descricao", "valor_bruto", "valor_final", "status_pagamento", "data_competencia"]
+    vals = [clinica_id, numero_os, descricao, valor_bruto, valor_final, "pendente", data_competencia]
+    if agendamento_id is not None and "agendamento_id" in _cols_existentes:
+        cols.append("agendamento_id")
+        vals.append(agendamento_id)
+    if "valor_desconto" in _cols_existentes:
+        cols.append("valor_desconto")
+        vals.append(valor_desconto)
+    if "created_at" in _cols_existentes:
+        cols.extend(["created_at", "updated_at"])
+        vals.extend([_now, _now])
+    placeholders = ", ".join(["?"] * len(vals))
+    cursor.execute(f"INSERT INTO financeiro ({', '.join(cols)}) VALUES ({placeholders})", tuple(vals))
+
+
 def calcular_valor_final(servico_id, clinica_id):
     """
     Calcula o valor final do serviço aplicando descontos da clínica.
@@ -752,27 +773,17 @@ def registrar_cobranca_automatica(agendamento_id, clinica_id, servicos_ids):
     descricao = "Serviços: " + ", ".join(descricao_servicos)
     numero_os = gerar_numero_os()
 
-    # Verificar se tabela tem created_at/updated_at (NOT NULL em DBs legados)
-    cursor.execute("PRAGMA table_info(financeiro)")
-    _fin_cols = {r[1].lower() for r in cursor.fetchall()}
-    if "created_at" in _fin_cols:
-        cursor.execute("""
-            INSERT INTO financeiro (
-                agendamento_id, clinica_id, numero_os, descricao,
-                valor_bruto, valor_desconto, valor_final,
-                status_pagamento, data_competencia, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente', ?, datetime('now'), datetime('now'))
-        """, (agendamento_id, clinica_id, numero_os, descricao,
-              valor_bruto, valor_desconto_total, valor_final, data_competencia))
-    else:
-        cursor.execute("""
-            INSERT INTO financeiro (
-                agendamento_id, clinica_id, numero_os, descricao,
-                valor_bruto, valor_desconto, valor_final,
-                status_pagamento, data_competencia
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente', ?)
-        """, (agendamento_id, clinica_id, numero_os, descricao,
-              valor_bruto, valor_desconto_total, valor_final, data_competencia))
+    inserir_financeiro(
+        cursor,
+        clinica_id=clinica_id,
+        numero_os=numero_os,
+        descricao=descricao,
+        valor_bruto=valor_bruto,
+        valor_desconto=valor_desconto_total,
+        valor_final=valor_final,
+        data_competencia=data_competencia,
+        agendamento_id=agendamento_id,
+    )
 
     conn.commit()
     conn.close()
@@ -1573,18 +1584,17 @@ def criar_os_ao_marcar_realizado(agendamento_id):
             conn.close()
             return row_existente_os[0], "already_exists"
         numero_os = gerar_numero_os()
-        cursor.execute("PRAGMA table_info(financeiro)")
-        _fin_cols = {r[1].lower() for r in cursor.fetchall()}
-        if "created_at" in _fin_cols:
-            cursor.execute("""
-                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?, datetime('now'), datetime('now'))
-            """, (agendamento_id, clinica_id, numero_os, descricao, valor_final, valor_final, data_comp))
-        else:
-            cursor.execute("""
-                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
-                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)
-            """, (agendamento_id, clinica_id, numero_os, descricao, valor_final, valor_final, data_comp))
+        inserir_financeiro(
+            cursor,
+            clinica_id=clinica_id,
+            numero_os=numero_os,
+            descricao=descricao,
+            valor_bruto=valor_final,
+            valor_desconto=0,
+            valor_final=valor_final,
+            data_competencia=data_comp,
+            agendamento_id=agendamento_id,
+        )
         conn.commit()
         conn.close()
         return numero_os, None
