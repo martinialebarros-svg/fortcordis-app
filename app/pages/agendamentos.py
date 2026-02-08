@@ -108,10 +108,19 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
             return None, "already_exists"
 
         numero_os = gerar_numero_os()
-        cursor.execute("""
-            INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
-            VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)
-        """, (agendamento_id, clinica_id, numero_os, descricao, valor_final, valor_final, data_comp))
+        # Verificar se tabela tem created_at/updated_at (NOT NULL em DBs legados)
+        cursor.execute("PRAGMA table_info(financeiro)")
+        _fin_cols = {r[1].lower() for r in cursor.fetchall()}
+        if "created_at" in _fin_cols:
+            cursor.execute("""
+                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?, datetime('now'), datetime('now'))
+            """, (agendamento_id, clinica_id, numero_os, descricao, valor_final, valor_final, data_comp))
+        else:
+            cursor.execute("""
+                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
+                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)
+            """, (agendamento_id, clinica_id, numero_os, descricao, valor_final, valor_final, data_comp))
         conn.commit()
         conn.close()
         return numero_os, None
@@ -215,10 +224,18 @@ def _criar_os_unica_com_servicos(agendamento_id, servicos_selecionados, servicos
             return None, "already_exists"
 
         numero_os = gerar_numero_os()
-        cursor.execute("""
-            INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
-            VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)
-        """, (agendamento_id, clinica_id, numero_os, descricao, total, total, data_comp))
+        cursor.execute("PRAGMA table_info(financeiro)")
+        _fin_cols = {r[1].lower() for r in cursor.fetchall()}
+        if "created_at" in _fin_cols:
+            cursor.execute("""
+                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?, datetime('now'), datetime('now'))
+            """, (agendamento_id, clinica_id, numero_os, descricao, total, total, data_comp))
+        else:
+            cursor.execute("""
+                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
+                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)
+            """, (agendamento_id, clinica_id, numero_os, descricao, total, total, data_comp))
         conn.commit()
         conn.close()
         return numero_os, None

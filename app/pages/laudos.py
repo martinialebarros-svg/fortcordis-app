@@ -13,7 +13,7 @@ import streamlit as st
 from fpdf import FPDF
 from PIL import Image
 
-from app.config import DB_PATH, formatar_data_br
+from app.config import DB_PATH, PASTA_DB, formatar_data_br
 from app.db import _db_init
 from app.laudos_helpers import (
     ARQUIVO_FRASES,
@@ -47,14 +47,20 @@ def _salvar_frases_json(db: dict) -> None:
 
 
 def _buscar_servicos_disponiveis(conn, clinica_id):
-    """Busca todos os serviços ativos disponíveis para a clínica."""
+    """Busca todos os serviços ativos com preços da tabela de preço da clínica."""
     cursor = conn.cursor()
+    # Buscar tabela de preço da clínica
+    cursor.execute("SELECT tabela_preco_id FROM clinicas_parceiras WHERE id = ?", (clinica_id,))
+    row = cursor.fetchone()
+    tabela_preco_id = row[0] if row and row[0] else 1
+    # Buscar serviços com preço da tabela da clínica (fallback para valor_base)
     cursor.execute("""
-        SELECT id, nome, valor_base
-        FROM servicos
-        WHERE ativo = 1 OR ativo IS NULL
-        ORDER BY nome
-    """)
+        SELECT s.id, s.nome, COALESCE(sp.valor, s.valor_base, 0) as valor_base
+        FROM servicos s
+        LEFT JOIN servico_preco sp ON s.id = sp.servico_id AND sp.tabela_preco_id = ?
+        WHERE s.ativo = 1 OR s.ativo IS NULL
+        ORDER BY s.nome
+    """, (tabela_preco_id,))
     cols = [desc[0] for desc in cursor.description]
     return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
@@ -1076,7 +1082,7 @@ def render_laudos(deps=None):
 
         if is_ref_canina:
             df_ref_local = st.session_state.get("df_ref")
-            arquivo_ref_local = ARQUIVO_REF
+            arquivo_ref_local = PASTA_DB / ARQUIVO_REF
             gerar_padrao_local = gerar_tabela_padrao
             limpar_local = limpar_e_converter_tabela
             cache_clear_local = carregar_tabela_referencia_cached.clear
@@ -1086,7 +1092,7 @@ def render_laudos(deps=None):
             label_reset = "Restaurar tabela padrão (CANINOS)"
         else:
             df_ref_local = st.session_state.get("df_ref_felinos")
-            arquivo_ref_local = ARQUIVO_REF_FELINOS
+            arquivo_ref_local = PASTA_DB / ARQUIVO_REF_FELINOS
             gerar_padrao_local = gerar_tabela_padrao_felinos
             limpar_local = limpar_e_converter_tabela_felinos
             cache_clear_local = carregar_tabela_referencia_felinos_cached.clear
@@ -2494,13 +2500,26 @@ def render_laudos(deps=None):
 
                                             # Criar OS para este serviço
                                             numero_os = gerar_numero_os()
-                                            cursor_fin.execute("""
-                                                INSERT INTO financeiro (
-                                                    clinica_id, numero_os, descricao,
-                                                    valor_bruto, valor_desconto, valor_final,
-                                                    status_pagamento, data_competencia
-                                                ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-                                            """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
+                                            # Verificar se tabela tem created_at/updated_at (NOT NULL em DBs legados)
+                                            cursor_fin.execute("PRAGMA table_info(financeiro)")
+                                            _fin_cols = {r[1].lower() for r in cursor_fin.fetchall()}
+                                            if "created_at" in _fin_cols:
+                                                cursor_fin.execute("""
+                                                    INSERT INTO financeiro (
+                                                        clinica_id, numero_os, descricao,
+                                                        valor_bruto, valor_desconto, valor_final,
+                                                        status_pagamento, data_competencia,
+                                                        created_at, updated_at
+                                                    ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?, datetime('now'), datetime('now'))
+                                                """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
+                                            else:
+                                                cursor_fin.execute("""
+                                                    INSERT INTO financeiro (
+                                                        clinica_id, numero_os, descricao,
+                                                        valor_bruto, valor_desconto, valor_final,
+                                                        status_pagamento, data_competencia
+                                                    ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
+                                                """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
                                             conn_fin.commit()
                                             servicos_criados.append((numero_os, vf))
                                             valor_total_os += vf
