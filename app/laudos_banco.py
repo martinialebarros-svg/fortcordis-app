@@ -317,6 +317,62 @@ def atualizar_laudo_editado(laudo_id, tipo_exame, caminho_json, dados_atualizado
         return False, str(e)
 
 
+def excluir_laudo_do_banco(laudo_id: int, tipo_exame: str) -> Tuple[bool, Optional[str]]:
+    """Exclui um laudo das tabelas de laudos (eco, eletro, pressão).
+
+    Retorna (True, None) ou (False, mensagem_erro).
+    """
+    try:
+        tabelas = {
+            "ecocardiograma": "laudos_ecocardiograma",
+            "eletrocardiograma": "laudos_eletrocardiograma",
+            "pressao_arterial": "laudos_pressao_arterial",
+        }
+        tabela = tabelas.get(tipo_exame.lower())
+        if not tabela:
+            return False, f"Tipo de exame inválido: {tipo_exame}"
+        tabela = validar_tabela(tabela)
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute(f"DELETE FROM {tabela} WHERE id = ?", (laudo_id,))
+        conn.commit()
+        removidos = cursor.rowcount
+        conn.close()
+        if removidos == 0:
+            return False, "Laudo não encontrado no banco."
+        return True, None
+    except Exception as e:
+        logger.exception("Falha ao excluir laudo id=%s tipo=%s", laudo_id, tipo_exame)
+        return False, str(e)
+
+
+def excluir_laudo_arquivo_do_banco(laudo_arquivo_id: int) -> Tuple[bool, Optional[str]]:
+    """Exclui um laudo da tabela laudos_arquivos e suas imagens associadas.
+
+    Retorna (True, None) ou (False, mensagem_erro).
+    """
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM laudos_arquivos_imagens WHERE laudo_arquivo_id = ?",
+            (laudo_arquivo_id,),
+        )
+        cursor.execute(
+            "DELETE FROM laudos_arquivos WHERE id = ?",
+            (laudo_arquivo_id,),
+        )
+        conn.commit()
+        removidos = cursor.rowcount
+        conn.close()
+        if removidos == 0:
+            return False, "Laudo não encontrado no banco."
+        return True, None
+    except Exception as e:
+        logger.exception("Falha ao excluir laudo_arquivo id=%s", laudo_arquivo_id)
+        return False, str(e)
+
+
 def salvar_laudo_arquivo_no_banco(
     nome_base: str,
     data_exame: str,
