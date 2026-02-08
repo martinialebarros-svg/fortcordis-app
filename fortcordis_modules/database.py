@@ -553,8 +553,36 @@ def garantir_colunas_financeiro():
                 cursor.execute(f"ALTER TABLE financeiro ADD COLUMN {nome} {tipo}")
             except sqlite3.OperationalError:
                 pass
+    # Também garante colunas da tabela parcerias_descontos
+    _garantir_colunas_parcerias_descontos(conn)
     conn.commit()
     conn.close()
+
+
+def _garantir_colunas_parcerias_descontos(conn):
+    """Garante que parcerias_descontos tenha as colunas esperadas pelo sistema.
+    Se a tabela tem 'valor' mas não 'valor_desconto', adiciona 'valor_desconto' e copia os dados."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='parcerias_descontos'")
+        if not cursor.fetchone():
+            return
+        cursor.execute("PRAGMA table_info(parcerias_descontos)")
+        cols = {r[1].lower() for r in cursor.fetchall()}
+        # Adicionar valor_desconto e migrar dados de 'valor' se necessário
+        if "valor_desconto" not in cols:
+            cursor.execute("ALTER TABLE parcerias_descontos ADD COLUMN valor_desconto REAL DEFAULT 0")
+            if "valor" in cols:
+                cursor.execute("UPDATE parcerias_descontos SET valor_desconto = valor WHERE valor_desconto IS NULL OR valor_desconto = 0")
+        # Adicionar colunas faltantes
+        for col, tipo in [("data_inicio", "TEXT"), ("data_fim", "TEXT"), ("observacoes", "TEXT")]:
+            if col not in cols:
+                try:
+                    cursor.execute(f"ALTER TABLE parcerias_descontos ADD COLUMN {col} {tipo}")
+                except sqlite3.OperationalError:
+                    pass
+    except sqlite3.OperationalError:
+        pass
 
 
 def garantir_colunas_agendamentos():
@@ -703,14 +731,22 @@ def calcular_valor_final(servico_id, clinica_id):
         valor_base = float(resultado[0] or 0)
     
     # Verifica se há desconto específico para este serviço e clínica
-    cursor.execute("""
-        SELECT tipo_desconto, valor_desconto 
-        FROM parcerias_descontos 
-        WHERE clinica_id = ? 
+    # Detecta nome da coluna de valor (compatível com ambos os esquemas)
+    cursor.execute("PRAGMA table_info(parcerias_descontos)")
+    _pd_cols = {r[1].lower() for r in cursor.fetchall()}
+    _col_valor = "valor_desconto" if "valor_desconto" in _pd_cols else "valor"
+    _filtro_datas = ""
+    if "data_inicio" in _pd_cols:
+        _filtro_datas += " AND (data_inicio IS NULL OR date(data_inicio) <= date('now'))"
+    if "data_fim" in _pd_cols:
+        _filtro_datas += " AND (data_fim IS NULL OR date(data_fim) >= date('now'))"
+    cursor.execute(f"""
+        SELECT tipo_desconto, {_col_valor}
+        FROM parcerias_descontos
+        WHERE clinica_id = ?
         AND (servico_id = ? OR servico_id IS NULL)
         AND ativo = 1
-        AND (data_inicio IS NULL OR date(data_inicio) <= date('now'))
-        AND (data_fim IS NULL OR date(data_fim) >= date('now'))
+        {_filtro_datas}
         ORDER BY servico_id DESC
         LIMIT 1
     """, (clinica_id, servico_id))
