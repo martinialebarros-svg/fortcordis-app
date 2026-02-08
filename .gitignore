@@ -1,7 +1,6 @@
 # Banco de dados (não subir para o repositório)
 fortcordis.db
 *.db
-!data/fortcordis.db
 *.sqlite
 *.sqlite3
 backup_*.sqlite
