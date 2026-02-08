@@ -76,7 +76,15 @@ CSS_GLOBAL = """
 
     [data-testid="stSidebar"] { background: linear-gradient(180deg, #16336b 0%, #1d4ed8 100%); border-right: 1px solid rgba(255,255,255,0.08); }
     [data-testid="stSidebar"] * { color: #f8fbff; }
-    [data-testid="stSidebar"] .stCaptionContainer { color: rgba(248, 251, 255, 0.75); }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #ffffff !important; }
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label, [data-testid="stSidebar"] li { color: #f0f4ff !important; }
+    [data-testid="stSidebar"] .stCaptionContainer { color: rgba(248, 251, 255, 0.75) !important; }
+    [data-testid="stSidebar"] .stMarkdown { color: #f0f4ff !important; }
+    [data-testid="stSidebar"] .stButton > button { color: #ffffff !important; border-color: rgba(255,255,255,0.3); }
+    [data-testid="stSidebar"] .stButton > button:hover { background: rgba(255,255,255,0.15); }
+    [data-testid="stSidebar"] .stSelectbox label, [data-testid="stSidebar"] .stMultiSelect label, [data-testid="stSidebar"] .stTextInput label, [data-testid="stSidebar"] .stDateInput label { color: #e0e8ff !important; }
+    [data-testid="stSidebar"] [data-baseweb="select"] span { color: #ffffff !important; }
+    [data-testid="stSidebar"] .stAlert p { color: #10213f !important; }
 
     [data-testid="stMetric"] {
         background: var(--fc-surface);
