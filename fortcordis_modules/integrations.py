@@ -73,7 +73,8 @@ def exportar_agendamento_ics(data: str, hora: str, titulo: str, descricao: str =
         f"SUMMARY:{titulo}\r\n"
     )
     if descricao:
-        ics += f"DESCRIPTION:{descricao.replace(chr(10), '\\\\n')}\r\n"
+        descricao_ics = descricao.replace("\n", "\\n")
+        ics += f"DESCRIPTION:{descricao_ics}\r\n"
     ics += "END:VEVENT\r\nEND:VCALENDAR\r\n"
     return ics
 

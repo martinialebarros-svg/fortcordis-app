@@ -494,6 +494,9 @@ def render_agendamentos():
                         tutor_id = db_upsert_tutor(nome=tutor_nome, telefone=telefone_agend or None)
                         if tutor_id:
                             paciente_id = db_upsert_paciente(tutor_id=tutor_id, nome=paciente_agend.strip())
+                    if not paciente_id:
+                        st.error("Não foi possível vincular ou cadastrar o paciente. Verifique os dados informados.")
+                        st.stop()
                     agend_id = criar_agendamento(
                         data=str(data_agend),
                         hora=str(hora_agend.strftime("%H:%M")),

@@ -1403,8 +1403,8 @@ def criar_agendamento(data, hora, paciente, tutor, telefone, servico, clinica, o
     valores = [data, hora, paciente, tutor, telefone, servico, clinica,
                observacoes, status, criado_em, criado_por_id, criado_por_nome or ""]
 
-    # Incluir paciente_id se a coluna existe
-    if "paciente_id" in colunas_existentes and paciente_id is not None:
+    # Incluir paciente_id se a coluna existe (obrigatório quando NOT NULL)
+    if "paciente_id" in colunas_existentes:
         colunas.append("paciente_id")
         valores.append(paciente_id)
 
@@ -1429,7 +1429,7 @@ def criar_agendamento(data, hora, paciente, tutor, telefone, servico, clinica, o
         cursor.execute(f"""
             INSERT INTO agendamentos ({col_names}) VALUES ({placeholders})
         """, valores)
-    except sqlite3.OperationalError:
+    except (sqlite3.OperationalError, sqlite3.IntegrityError):
         conn.close()
         raise
     conn.commit()
