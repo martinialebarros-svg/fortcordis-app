@@ -7,6 +7,7 @@ import streamlit as st
 
 from app.config import DB_PATH, formatar_data_br
 from app.services.pacientes import buscar_pacientes_por_termo_livre
+from app.db import db_upsert_tutor, db_upsert_paciente
 from app.laudos_banco import listar_animais_tutores_de_laudos
 from fortcordis_modules.database import (
     criar_agendamento,
@@ -354,6 +355,7 @@ def render_agendamentos():
                 cadastro_keys = {(c["paciente"].strip().lower(), c["tutor"].strip().lower()) for c in cadastro}
                 for c in cadastro:
                     lista_vinculo.append({
+                        "id": c.get("id"),
                         "paciente": c["paciente"],
                         "tutor": c["tutor"],
                         "telefone": c.get("telefone") or "",
@@ -382,6 +384,7 @@ def render_agendamentos():
                         st.session_state["novo_agend_paciente"] = rec["paciente"]
                         st.session_state["novo_agend_tutor"] = rec["tutor"]
                         st.session_state["novo_agend_telefone"] = rec.get("telefone") or ""
+                        st.session_state["novo_agend_paciente_id"] = rec.get("id")
                         st.success(f"Preenchido: **{rec['paciente']}** — **{rec['tutor']}**")
             elif busca_vinculo and str(busca_vinculo).strip():
                 st.info("Nenhum paciente ou laudo encontrado com esse termo. Cadastre o paciente nos campos abaixo.")
@@ -476,6 +479,21 @@ def render_agendamentos():
                 st.error("Selecione uma clínica ou cadastre uma nova antes de criar o agendamento.")
             else:
                 try:
+                    # Resolver paciente_id: da seleção vinculada, busca por nome, ou auto-cadastro
+                    paciente_id = st.session_state.get("novo_agend_paciente_id")
+                    if not paciente_id:
+                        # Tentar encontrar paciente cadastrado pelo nome
+                        resultados = buscar_pacientes_por_termo_livre(termo=paciente_agend.strip(), limite=5)
+                        for r in resultados:
+                            if r["paciente"].strip().lower() == paciente_agend.strip().lower():
+                                paciente_id = r["id"]
+                                break
+                    if not paciente_id:
+                        # Auto-cadastrar tutor e paciente para não bloquear o agendamento
+                        tutor_nome = tutor_agend.strip() if tutor_agend and tutor_agend.strip() else paciente_agend.strip()
+                        tutor_id = db_upsert_tutor(nome=tutor_nome, telefone=telefone_agend or None)
+                        if tutor_id:
+                            paciente_id = db_upsert_paciente(tutor_id=tutor_id, nome=paciente_agend.strip())
                     agend_id = criar_agendamento(
                         data=str(data_agend),
                         hora=str(hora_agend.strftime("%H:%M")),
@@ -486,11 +504,12 @@ def render_agendamentos():
                         clinica=clinica_agend,
                         observacoes=observacoes_agend,
                         criado_por_id=st.session_state.get("usuario_id"),
-                        criado_por_nome=st.session_state.get("usuario_nome", "")
+                        criado_por_nome=st.session_state.get("usuario_nome", ""),
+                        paciente_id=paciente_id,
                     )
                     st.success(f"✅ Agendamento #{agend_id} criado com sucesso!")
                     st.balloons()
-                    for key in ['novo_agend_paciente', 'novo_agend_tutor', 'novo_agend_telefone', 'novo_agend_clinica', 'novo_agend_obs', 'novo_agend_data']:
+                    for key in ['novo_agend_paciente', 'novo_agend_tutor', 'novo_agend_telefone', 'novo_agend_clinica', 'novo_agend_obs', 'novo_agend_data', 'novo_agend_paciente_id']:
                         if key in st.session_state:
                             del st.session_state[key]
                     st.rerun()
