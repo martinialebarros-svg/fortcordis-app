@@ -368,9 +368,17 @@ def verificar_timeout_sessao() -> bool:
     Verifica se a sessão expirou por inatividade.
     Deve ser chamada a cada página carregada.
     Retorna True se a sessão ainda é válida, False se expirou.
+
+    Sessões com token persistente ("lembrar-me") não expiram por inatividade —
+    o token já possui validade própria (30 dias).
     """
     if not st.session_state.get("autenticado"):
         return False
+
+    # Sessão persistente ("lembrar-me") não expira por inatividade
+    if st.session_state.get("auth_token"):
+        st.session_state["ultimo_acesso_sessao"] = datetime.now().isoformat()
+        return True
 
     agora = datetime.now()
     ultimo_acesso = st.session_state.get("ultimo_acesso_sessao")
@@ -379,11 +387,7 @@ def verificar_timeout_sessao() -> bool:
         try:
             ultimo = datetime.fromisoformat(ultimo_acesso)
             if (agora - ultimo).total_seconds() > SESSION_TIMEOUT_MINUTOS * 60:
-                # Sessão expirou por inatividade
-                token = st.session_state.get("auth_token")
-                if token:
-                    invalidar_token_persistente(token)
-                remover_sessao_persistente()
+                # Sessão expirou por inatividade (sem "lembrar-me")
                 st.session_state.clear()
                 return False
         except (ValueError, TypeError):
@@ -402,16 +406,6 @@ def obter_usuario_logado() -> Optional[Dict]:
         Dicionário com dados do usuário ou None
     """
     return st.session_state.get("usuario_logado")
-
-
-def fazer_logout():
-    """
-    Remove o usuário da sessão.
-    """
-    if "usuario_logado" in st.session_state:
-        del st.session_state["usuario_logado"]
-    st.success("✅ Logout realizado com sucesso!")
-    st.rerun()
 
 
 def atualizar_senha(usuario_id: int, senha_atual: str, nova_senha: str) -> Tuple[bool, str]:
@@ -881,7 +875,8 @@ def carregar_sessao_por_token(token):
         st.session_state["usuario_email"] = usuario[1]
         st.session_state["auth_token"] = token
         st.session_state["permissoes"] = carregar_permissoes_usuario(usuario_id)
-        
+        st.session_state["ultimo_acesso_sessao"] = datetime.now().isoformat()
+
         return True
 
     except Exception as e:
