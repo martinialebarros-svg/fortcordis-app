@@ -14,6 +14,7 @@ from fortcordis_modules.database import (
     atualizar_agendamento,
     deletar_agendamento,
     criar_os_ao_marcar_realizado,
+    inserir_financeiro,
 )
 from fortcordis_modules.integrations import (
     whatsapp_link,
@@ -108,19 +109,17 @@ def _criar_os_servico_extra(agendamento_id, servico_nome, valor_final):
             return None, "already_exists"
 
         numero_os = gerar_numero_os()
-        # Verificar se tabela tem created_at/updated_at (NOT NULL em DBs legados)
-        cursor.execute("PRAGMA table_info(financeiro)")
-        _fin_cols = {r[1].lower() for r in cursor.fetchall()}
-        if "created_at" in _fin_cols:
-            cursor.execute("""
-                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?, datetime('now'), datetime('now'))
-            """, (agendamento_id, clinica_id, numero_os, descricao, valor_final, valor_final, data_comp))
-        else:
-            cursor.execute("""
-                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
-                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)
-            """, (agendamento_id, clinica_id, numero_os, descricao, valor_final, valor_final, data_comp))
+        inserir_financeiro(
+            cursor,
+            clinica_id=clinica_id,
+            numero_os=numero_os,
+            descricao=descricao,
+            valor_bruto=valor_final,
+            valor_desconto=0,
+            valor_final=valor_final,
+            data_competencia=data_comp,
+            agendamento_id=agendamento_id,
+        )
         conn.commit()
         conn.close()
         return numero_os, None
@@ -224,18 +223,17 @@ def _criar_os_unica_com_servicos(agendamento_id, servicos_selecionados, servicos
             return None, "already_exists"
 
         numero_os = gerar_numero_os()
-        cursor.execute("PRAGMA table_info(financeiro)")
-        _fin_cols = {r[1].lower() for r in cursor.fetchall()}
-        if "created_at" in _fin_cols:
-            cursor.execute("""
-                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?, datetime('now'), datetime('now'))
-            """, (agendamento_id, clinica_id, numero_os, descricao, total, total, data_comp))
-        else:
-            cursor.execute("""
-                INSERT INTO financeiro (agendamento_id, clinica_id, numero_os, descricao, valor_bruto, valor_desconto, valor_final, status_pagamento, data_competencia)
-                VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente', ?)
-            """, (agendamento_id, clinica_id, numero_os, descricao, total, total, data_comp))
+        inserir_financeiro(
+            cursor,
+            clinica_id=clinica_id,
+            numero_os=numero_os,
+            descricao=descricao,
+            valor_bruto=total,
+            valor_desconto=0,
+            valor_final=total,
+            data_competencia=data_comp,
+            agendamento_id=agendamento_id,
+        )
         conn.commit()
         conn.close()
         return numero_os, None
