@@ -25,8 +25,11 @@ def render_dashboard():
     st.title("🏥 Painel da Clínica")
     st.caption("Visão diária operacional: agenda, laudos e financeiro.")
 
-    filtro_periodo = st.session_state.get("filtro_periodo_global", "Hoje")
-    status_selecionados = st.session_state.get("filtro_status_global", ["Agendado", "Confirmado", "Realizado"])
+    filtro_periodo = st.session_state.get("ui_filtro_periodo_global", st.session_state.get("filtro_periodo_global", "Hoje"))
+    status_selecionados = st.session_state.get(
+        "ui_filtro_status_global",
+        st.session_state.get("filtro_status_global", ["Agendado", "Confirmado", "Realizado"]),
+    )
 
     conn = sqlite3.connect(str(DB_PATH))
     hoje = datetime.now().strftime("%Y-%m-%d")
