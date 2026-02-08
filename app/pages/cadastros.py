@@ -242,10 +242,9 @@ def render_cadastros():
         try:
             # Serviços com valor base
             servicos = pd.read_sql_query("""
-                SELECT 
+                SELECT
                     nome as 'Serviço',
-                    valor_base as 'Valor Base',
-                    duracao_minutos as 'Duração (min)'
+                    valor_base as 'Valor Base'
                 FROM servicos
                 WHERE (ativo = 1 OR ativo IS NULL)
                 ORDER BY nome
@@ -262,7 +261,7 @@ def render_cadastros():
             st.markdown("---")
             st.markdown("### 📋 Valores por Tabela de Preço")
             try:
-                tabelas = pd.read_sql_query("SELECT id, nome, descricao FROM tabelas_preco WHERE (ativo = 1 OR ativo IS NULL) ORDER BY id", conn)
+                tabelas = pd.read_sql_query("SELECT id, nome, tipo as descricao FROM tabelas_preco WHERE (ativo = 1 OR ativo IS NULL) ORDER BY id", conn)
             except Exception:
                 tabelas = pd.DataFrame()
             if not tabelas.empty:
