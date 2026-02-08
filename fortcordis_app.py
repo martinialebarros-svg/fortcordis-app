@@ -624,18 +624,18 @@ menu_principal = st.sidebar.radio(
 )
 
 with st.sidebar.expander("🔎 Filtros globais", expanded=False):
-    st.session_state["filtro_busca_global"] = st.text_input(
+    st.text_input(
         "Busca rápida (paciente/tutor/clínica)",
         value=st.session_state.get("filtro_busca_global", ""),
         key="filtro_busca_global"
     )
-    st.session_state["filtro_periodo_global"] = st.selectbox(
+    st.selectbox(
         "Período",
         ["Hoje", "7 dias", "30 dias"],
         index=["Hoje", "7 dias", "30 dias"].index(st.session_state.get("filtro_periodo_global", "Hoje")),
         key="filtro_periodo_global"
     )
-    st.session_state["filtro_status_global"] = st.multiselect(
+    st.multiselect(
         "Status",
         ["Agendado", "Confirmado", "Realizado", "Rascunho", "Finalizado", "Pendente", "Pago"],
         default=st.session_state.get("filtro_status_global", ["Agendado", "Confirmado", "Realizado"]),
