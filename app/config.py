@@ -55,30 +55,80 @@ ARQUIVO_REF_FELINOS = "tabela_referencia_felinos.csv"
 
 CSS_GLOBAL = """
 <style>
-    .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1400px; }
-    h1 { font-size: 1.85rem !important; font-weight: 600 !important; color: #1e3a5f !important; margin-bottom: 0.5rem !important; }
-    h2 { font-size: 1.35rem !important; font-weight: 600 !important; color: #2c5282 !important; }
-    h3 { font-size: 1.1rem !important; font-weight: 600 !important; color: #2d3748 !important; }
-    [data-testid="stSidebar"] { background: linear-gradient(180deg, #1e3a5f 0%, #2c5282 100%); }
-    [data-testid="stSidebar"] .stMarkdown { color: rgba(255,255,255,0.95); }
-    [data-testid="stSidebar"] h1 { color: #fff !important; }
-    [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: rgba(255,255,255,0.9) !important; }
-    [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.2); }
-    [data-testid="stSidebar"] .stRadio label { color: rgba(255,255,255,0.95) !important; }
-    [data-testid="stSidebar"] .stRadio label div { color: inherit !important; }
-    [data-testid="stMetric"] { background: #f7fafc; padding: 1rem 1.25rem; border-radius: 8px; border-left: 4px solid #2c5282; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-    [data-testid="stMetric"] label { font-weight: 600 !important; color: #2d3748 !important; }
-    .stButton > button[kind="primary"] { background: linear-gradient(135deg, #2c5282 0%, #1e3a5f 100%); font-weight: 600; border-radius: 6px; }
-    .stButton > button[kind="primary"]:hover { box-shadow: 0 4px 12px rgba(44,82,130,0.35); }
-    .streamlit-expanderHeader { background: #f7fafc; border-radius: 6px; }
-    hr { margin: 1.25rem 0 !important; border-color: #e2e8f0 !important; }
-    [data-testid="stAlert"] { border-radius: 8px; }
-    .stTabs [data-baseweb="tab-list"] { gap: 0.25rem; }
-    .stTabs [data-baseweb="tab"] { border-radius: 6px 6px 0 0; padding: 0.5rem 1rem; font-weight: 500; }
-    .stTabs [aria-selected="true"] { background: #edf2f7; }
-    [data-testid="stSidebar"] .stCaptionContainer { color: rgba(255,255,255,0.75); }
-    [data-testid="stSidebar"] [data-testid="stAlert"] { background: rgba(255,255,255,0.12) !important; color: #fff !important; border: 1px solid rgba(255,255,255,0.25); }
-    [data-testid="stSidebar"] [data-testid="stAlert"] p { color: #fff !important; }
-    [data-testid="stSidebar"] [data-testid="stAlert"] a { color: #a5d6ff !important; }
+    :root {
+        --fc-primary: #1d4ed8;
+        --fc-primary-dark: #1e3a8a;
+        --fc-bg: #f5f8ff;
+        --fc-surface: #ffffff;
+        --fc-border: #dbe7ff;
+        --fc-text: #10213f;
+        --fc-muted: #4b5f84;
+    }
+
+    #MainMenu, header, footer {visibility: hidden;}
+    .block-container {padding-top: 1.25rem; padding-bottom: 2rem; max-width: 1500px;}
+    .stApp { background: linear-gradient(180deg, #f5f8ff 0%, #eef3ff 100%); color: var(--fc-text); }
+
+    h1, h2, h3 { letter-spacing: -0.01em; }
+    h1 { font-size: 1.9rem !important; font-weight: 700 !important; color: var(--fc-primary-dark) !important; }
+    h2 { font-size: 1.35rem !important; font-weight: 650 !important; color: #17356e !important; }
+    h3 { font-size: 1.08rem !important; font-weight: 600 !important; color: #223555 !important; }
+
+    [data-testid="stSidebar"] { background: linear-gradient(180deg, #16336b 0%, #1d4ed8 100%); border-right: 1px solid rgba(255,255,255,0.08); }
+    [data-testid="stSidebar"] * { color: #f8fbff; }
+    [data-testid="stSidebar"] .stCaptionContainer { color: rgba(248, 251, 255, 0.75); }
+
+    [data-testid="stMetric"] {
+        background: var(--fc-surface);
+        border: 1px solid var(--fc-border);
+        border-radius: 14px;
+        padding: 1rem 1.1rem;
+        box-shadow: 0 10px 24px rgba(17, 36, 79, 0.08);
+    }
+
+    .fc-card {
+        background: var(--fc-surface);
+        border: 1px solid var(--fc-border);
+        border-radius: 14px;
+        box-shadow: 0 12px 24px rgba(17, 36, 79, 0.08);
+        padding: 1rem 1.15rem;
+        margin-bottom: 1rem;
+    }
+
+    .stButton > button {
+        border-radius: 12px;
+        border: 1px solid #c8d8ff;
+        font-weight: 600;
+    }
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, var(--fc-primary) 0%, #2563eb 100%);
+        border: 0;
+        color: #fff;
+    }
+
+    .stTextInput > div > div > input,
+    .stTextArea textarea,
+    .stSelectbox div[data-baseweb="select"] > div,
+    .stDateInput input,
+    .stNumberInput input {
+        border-radius: 10px !important;
+    }
+
+    [data-testid="stTabs"] [data-baseweb="tab-list"] { gap: .35rem; }
+    [data-testid="stTabs"] [data-baseweb="tab"] {
+        border-radius: 10px 10px 0 0;
+        background: #ebf2ff;
+        height: 2.3rem;
+        padding-left: .9rem;
+        padding-right: .9rem;
+    }
+    [data-testid="stTabs"] [aria-selected="true"] {
+        background: #dbe7ff;
+        color: #0f2d66;
+        font-weight: 600;
+    }
+
+    [data-testid="stAlert"] { border-radius: 10px; }
 </style>
 """
+
