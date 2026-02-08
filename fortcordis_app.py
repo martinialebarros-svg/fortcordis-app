@@ -16,6 +16,26 @@ import copy
 from datetime import datetime, date, timedelta
 import unicodedata
 import secrets
+import shutil
+
+# ============================================================
+# RESTAURAR BANCO A PARTIR DO SEED (Streamlit Cloud: disco efêmero)
+# Deve rodar ANTES de qualquer import que acesse o banco
+# ============================================================
+_project_root = Path(__file__).resolve().parent
+_db_path = _project_root / "data" / "fortcordis.db"
+_seed_path = _project_root / "data" / "fortcordis_seed.db"
+_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+if not _db_path.exists() and _seed_path.exists():
+    shutil.copy2(str(_seed_path), str(_db_path))
+    print(f"[Fort Cordis] Banco restaurado a partir do seed ({_seed_path.stat().st_size} bytes)")
+elif not _db_path.exists():
+    print("[Fort Cordis] AVISO: Banco nao existe e seed nao encontrado!")
+else:
+    print(f"[Fort Cordis] Banco ja existe ({_db_path.stat().st_size} bytes), seed nao necessario")
+
+del _project_root, _db_path, _seed_path
 
 # ============================================================
 # VERSÃO E CONFIG (app/config.py)
