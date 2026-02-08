@@ -624,31 +624,44 @@ menu_principal = st.sidebar.radio(
 )
 
 with st.sidebar.expander("🔎 Filtros globais", expanded=False):
+    periodos_disponiveis = ["Hoje", "7 dias", "30 dias"]
+    status_disponiveis = ["Agendado", "Confirmado", "Realizado", "Rascunho", "Finalizado", "Pendente", "Pago"]
+
+    # Chaves canônicas lidas pelas páginas
     if "filtro_busca_global" not in st.session_state:
         st.session_state["filtro_busca_global"] = ""
-
-    periodos_disponiveis = ["Hoje", "7 dias", "30 dias"]
     if st.session_state.get("filtro_periodo_global") not in periodos_disponiveis:
         st.session_state["filtro_periodo_global"] = "Hoje"
-
-    status_disponiveis = ["Agendado", "Confirmado", "Realizado", "Rascunho", "Finalizado", "Pendente", "Pago"]
     if "filtro_status_global" not in st.session_state:
         st.session_state["filtro_status_global"] = ["Agendado", "Confirmado", "Realizado"]
 
+    # Chaves de UI (evita conflito caso o valor canônico seja alterado em outro ponto)
+    if "ui_filtro_busca_global" not in st.session_state:
+        st.session_state["ui_filtro_busca_global"] = st.session_state.get("filtro_busca_global", "")
+    if "ui_filtro_periodo_global" not in st.session_state:
+        st.session_state["ui_filtro_periodo_global"] = st.session_state.get("filtro_periodo_global", "Hoje")
+    if "ui_filtro_status_global" not in st.session_state:
+        st.session_state["ui_filtro_status_global"] = st.session_state.get("filtro_status_global", ["Agendado", "Confirmado", "Realizado"])
+
     st.text_input(
         "Busca rápida (paciente/tutor/clínica)",
-        key="filtro_busca_global"
+        key="ui_filtro_busca_global"
     )
     st.selectbox(
         "Período",
         periodos_disponiveis,
-        key="filtro_periodo_global"
+        key="ui_filtro_periodo_global"
     )
     st.multiselect(
         "Status",
         status_disponiveis,
-        key="filtro_status_global"
+        key="ui_filtro_status_global"
     )
+
+    # Sincroniza para as chaves canônicas consumidas pelas páginas
+    st.session_state["filtro_busca_global"] = st.session_state.get("ui_filtro_busca_global", "")
+    st.session_state["filtro_periodo_global"] = st.session_state.get("ui_filtro_periodo_global", "Hoje")
+    st.session_state["filtro_status_global"] = st.session_state.get("ui_filtro_status_global", ["Agendado", "Confirmado", "Realizado"])
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Versão 2.0 — Sistema Integrado")
