@@ -31,6 +31,7 @@ from app.laudos_helpers import (
     obter_laudo_arquivo_por_id,
     restaurar_laudo_para_pasta,
 )
+from fortcordis_modules.database import garantir_colunas_financeiro
 from modules.rbac import verificar_permissao
 
 
@@ -2442,6 +2443,7 @@ def render_laudos(deps=None):
 
                     # 5) ✅ CRIA ORDEM DE SERVIÇO (OS) NO FINANCEIRO
                     try:
+                        garantir_colunas_financeiro()
                         clinica_nome = (clinica or "").strip()
                         if clinica_nome:
                             conn_fin = sqlite3.connect(str(DB_PATH))
