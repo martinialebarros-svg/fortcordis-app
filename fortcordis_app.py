@@ -622,6 +622,34 @@ menu_principal = st.sidebar.radio(
     get_menu_labels(),
     label_visibility="collapsed"
 )
+
+with st.sidebar.expander("🔎 Filtros globais", expanded=False):
+    if "filtro_busca_global" not in st.session_state:
+        st.session_state["filtro_busca_global"] = ""
+
+    periodos_disponiveis = ["Hoje", "7 dias", "30 dias"]
+    if st.session_state.get("filtro_periodo_global") not in periodos_disponiveis:
+        st.session_state["filtro_periodo_global"] = "Hoje"
+
+    status_disponiveis = ["Agendado", "Confirmado", "Realizado", "Rascunho", "Finalizado", "Pendente", "Pago"]
+    if "filtro_status_global" not in st.session_state:
+        st.session_state["filtro_status_global"] = ["Agendado", "Confirmado", "Realizado"]
+
+    st.text_input(
+        "Busca rápida (paciente/tutor/clínica)",
+        key="filtro_busca_global"
+    )
+    st.selectbox(
+        "Período",
+        periodos_disponiveis,
+        key="filtro_periodo_global"
+    )
+    st.multiselect(
+        "Status",
+        status_disponiveis,
+        key="filtro_status_global"
+    )
+
 st.sidebar.markdown("---")
 st.sidebar.caption("Versão 2.0 — Sistema Integrado")
 st.sidebar.caption(f"Deploy: {VERSAO_DEPLOY}")
@@ -1450,4 +1478,3 @@ for label, module_path, function_name, special in MENU_ITEMS:
         mod = importlib.import_module(module_path)
         getattr(mod, function_name)()
     break
-
