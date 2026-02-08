@@ -8,12 +8,12 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-# Banco: pasta do projeto (fortcordis_modules/../fortcordis.db) ou variável de ambiente
+# Banco: pasta do projeto (fortcordis_modules/../data/fortcordis.db) ou variável de ambiente
 if os.environ.get("FORTCORDIS_DB_PATH"):
     DB_PATH = Path(os.environ["FORTCORDIS_DB_PATH"])
 else:
     _root = Path(__file__).resolve().parent.parent
-    DB_PATH = _root / "fortcordis.db"
+    DB_PATH = _root / "data" / "fortcordis.db"
 
 # Garante que a pasta do banco existe (para ambientes de deploy)
 if DB_PATH.parent != Path("."):

@@ -44,8 +44,8 @@ def _setup_app_logging():
         log.propagate = False  # evita duplicar no root
 _setup_app_logging()
 _ROOT = Path(__file__).resolve().parent.parent
-PASTA_DB = _ROOT
-DB_PATH = _ROOT / "fortcordis.db"
+PASTA_DB = _ROOT / "data"
+DB_PATH = _ROOT / "data" / "fortcordis.db"
 
 # Laudos: pastas e arquivos de referência (centralizado para Fase B)
 PASTA_LAUDOS = Path.home() / "FortCordis" / "Laudos"

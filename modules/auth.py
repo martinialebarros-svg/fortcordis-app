@@ -25,7 +25,7 @@ if os.environ.get("FORTCORDIS_DB_PATH"):
     DB_PATH = Path(os.environ["FORTCORDIS_DB_PATH"])
 else:
     _root = Path(__file__).resolve().parent.parent
-    DB_PATH = _root / "fortcordis.db"
+    DB_PATH = _root / "data" / "fortcordis.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
