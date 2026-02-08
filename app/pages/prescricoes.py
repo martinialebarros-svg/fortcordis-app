@@ -1,6 +1,7 @@
 # app/pages/prescricoes.py
 """Página Prescrições: nova prescrição, buscar paciente, medicamentos, templates, histórico."""
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -851,7 +852,6 @@ def render_prescricoes():
                 if st.button("✅ Salvar Template", type="primary", key="btn_salvar_template"):
                     if novo_temp_nome and novo_temp_texto:
                         try:
-                            from datetime import datetime
                             now = datetime.now().isoformat()
 
                             conn_temp_novo = sqlite3.connect(str(DB_PATH))
