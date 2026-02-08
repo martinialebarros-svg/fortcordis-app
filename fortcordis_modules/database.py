@@ -388,7 +388,7 @@ def inicializar_banco():
     cursor.execute("SELECT COUNT(*) FROM tabelas_preco")
     if cursor.fetchone()[0] == 0:
         cursor.executemany(
-            "INSERT INTO tabelas_preco (id, nome, descricao) VALUES (?, ?, ?)",
+            "INSERT INTO tabelas_preco (id, nome, tipo) VALUES (?, ?, ?)",
             [
                 (1, "Clínicas Fortaleza", "Tabela padrão clínicas em Fortaleza"),
                 (2, "Região Metropolitana", "Tabela região metropolitana"),

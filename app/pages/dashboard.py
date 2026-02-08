@@ -64,10 +64,10 @@ def render_dashboard():
     try:
         proximos = pd.read_sql_query(
             """
-            SELECT data_agendamento, hora_agendamento, nome_animal, tutor_nome, clinica_nome, status
+            SELECT data, hora, paciente, tutor, clinica, status
             FROM agendamentos
-            WHERE data_agendamento >= date('now')
-            ORDER BY data_agendamento, hora_agendamento
+            WHERE data >= date('now')
+            ORDER BY data, hora
             LIMIT 8
             """,
             conn,
@@ -90,11 +90,11 @@ def render_dashboard():
         st.info("Nenhum agendamento futuro encontrado.")
     else:
         proximos = proximos.rename(columns={
-            "data_agendamento": "Data",
-            "hora_agendamento": "Hora",
-            "nome_animal": "Paciente",
-            "tutor_nome": "Tutor",
-            "clinica_nome": "Clínica",
+            "data": "Data",
+            "hora": "Hora",
+            "paciente": "Paciente",
+            "tutor": "Tutor",
+            "clinica": "Clínica",
             "status": "Status",
         })
         if status_selecionados:
