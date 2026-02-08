@@ -15,6 +15,7 @@ from PIL import Image
 
 from app.config import DB_PATH, PASTA_DB, formatar_data_br
 from app.db import _db_init
+from app.laudos_banco import excluir_laudo_arquivo_do_banco, excluir_laudo_do_banco
 from app.laudos_helpers import (
     ARQUIVO_FRASES,
     ARQUIVO_FRASES_REPO,
@@ -1212,6 +1213,32 @@ def render_laudos(deps=None):
                     "**Clínica, animal e tutor vazios?** Em Configurações > Importar dados: marque **«Limpar laudos antes de importar»** e importe o backup **uma vez**. "
                     "Isso apaga os laudos repetidos e reimporta com os vínculos corretos — os nomes passam a aparecer aqui."
                 )
+            # seleção individual para exclusão
+            opcoes_banco = [
+                f'{formatar_data_br(str(r["data"]))} | {r["animal"]} | {r["tutor"]} | {r["clinica"]} | {r["tipo_exame"]}'
+                for r in laudos_banco
+            ]
+            idx_banco_sel = st.selectbox(
+                "Selecione um exame para excluir",
+                range(len(opcoes_banco)),
+                format_func=lambda i: opcoes_banco[i],
+                key="sel_laudo_banco_excluir",
+            )
+            row_banco = laudos_banco[idx_banco_sel]
+            with st.popover("🗑️ Excluir do banco"):
+                st.warning(
+                    f"Excluir **{row_banco.get('animal', '')}** "
+                    f"({formatar_data_br(str(row_banco.get('data', '')))}, "
+                    f"{row_banco.get('tipo_exame', '')}) do banco? "
+                    "Esta ação não pode ser desfeita."
+                )
+                if st.button("Confirmar exclusão", key="btn_excluir_laudo_banco", type="primary"):
+                    ok, msg = excluir_laudo_do_banco(row_banco["id"], row_banco["tipo_exame"])
+                    if ok:
+                        st.success("Exame excluído do banco com sucesso.")
+                        st.rerun()
+                    else:
+                        st.error(f"Erro ao excluir: {msg}")
         else:
             if total_banco > 0:
                 st.warning(
@@ -1291,6 +1318,15 @@ def render_laudos(deps=None):
                             st.success(msg)
                         else:
                             st.error(msg)
+                with st.popover("🗑️ Excluir do banco"):
+                    st.warning(f"Excluir **{row_arq.get('animal', '')}** ({formatar_data_br(str(row_arq.get('data', '')))}) do banco? Esta ação não pode ser desfeita.")
+                    if st.button("Confirmar exclusão", key="btn_excluir_laudo_arquivo", type="primary"):
+                        ok, msg = excluir_laudo_arquivo_do_banco(row_arq["id_laudo_arquivo"])
+                        if ok:
+                            st.success("Exame excluído do banco com sucesso.")
+                            st.rerun()
+                        else:
+                            st.error(f"Erro ao excluir: {msg}")
         else:
             if n_arq > 0:
                 st.warning("Nenhum exame com esses filtros. Limpe a busca para ver todos.")
@@ -1424,6 +1460,22 @@ def render_laudos(deps=None):
                         st.info("PDF correspondente não encontrado (talvez você tenha arquivado só o JSON em algum momento).")
                 except Exception as e:
                     st.warning(f"Não consegui ler o PDF: {e}")
+
+                # excluir arquivos da pasta
+                with st.popover("🗑️ Excluir exame da pasta"):
+                    st.warning(f"Excluir arquivos de **{row['animal']}** ({formatar_data_br(str(row['data']))}) da pasta? Esta ação não pode ser desfeita.")
+                    if st.button("Confirmar exclusão", key="btn_excluir_exame_pasta", type="primary"):
+                        removidos = []
+                        for caminho in [row["arquivo_json"], row["arquivo_pdf"]]:
+                            p = Path(caminho)
+                            if p.exists():
+                                p.unlink()
+                                removidos.append(p.name)
+                        if removidos:
+                            st.success(f"Removido(s): {', '.join(removidos)}")
+                            st.rerun()
+                        else:
+                            st.info("Nenhum arquivo encontrado para remover.")
 
 
     # PDF E SALVAR
