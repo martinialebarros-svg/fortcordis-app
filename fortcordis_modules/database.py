@@ -612,8 +612,9 @@ def garantir_colunas_agendamentos():
             pass
     for col, tipo in [("hora", "TEXT"), ("paciente", "TEXT"), ("tutor", "TEXT"), ("telefone", "TEXT"),
                       ("servico", "TEXT"), ("clinica", "TEXT"), ("observacoes", "TEXT"), ("status", "TEXT"),
-                      ("criado_por_id", "INTEGER"), ("criado_por_nome", "TEXT"),
-                      ("confirmado_em", "TEXT"), ("confirmado_por_id", "INTEGER"), ("confirmado_por_nome", "TEXT")]:
+                      ("criado_em", "TEXT"), ("criado_por_id", "INTEGER"), ("criado_por_nome", "TEXT"),
+                      ("confirmado_em", "TEXT"), ("confirmado_por_id", "INTEGER"), ("confirmado_por_nome", "TEXT"),
+                      ("atualizado_em", "TEXT")]:
         if col.lower() not in cols:
             try:
                 cursor.execute(f"ALTER TABLE agendamentos ADD COLUMN {col} {tipo}")
