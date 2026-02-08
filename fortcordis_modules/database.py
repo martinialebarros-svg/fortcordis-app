@@ -1349,21 +1349,50 @@ def _col_data_agendamentos(cursor):
         return "data"
 
 
-def criar_agendamento(data, hora, paciente, tutor, telefone, servico, clinica, observacoes="", status="Agendado", criado_por_id=None, criado_por_nome=None):
+def criar_agendamento(data, hora, paciente, tutor, telefone, servico, clinica, observacoes="", status="Agendado", criado_por_id=None, criado_por_nome=None, paciente_id=None):
     """Cria um novo agendamento. Usa a coluna de data existente (data ou data_agendamento). Registra quem criou e quando."""
     garantir_colunas_agendamentos()
     conn = get_conn()
     cursor = conn.cursor()
     col_data = _col_data_agendamentos(cursor)
     criado_em = datetime.now().isoformat()
+
+    # Verificar quais colunas existem na tabela
+    cursor.execute("PRAGMA table_info(agendamentos)")
+    colunas_existentes = {row[1].lower() for row in cursor.fetchall()}
+
+    # Construir colunas e valores dinamicamente
+    colunas = [col_data, "hora", "paciente", "tutor", "telefone", "servico",
+               "clinica", "observacoes", "status", "criado_em", "criado_por_id", "criado_por_nome"]
+    valores = [data, hora, paciente, tutor, telefone, servico, clinica,
+               observacoes, status, criado_em, criado_por_id, criado_por_nome or ""]
+
+    # Incluir paciente_id se a coluna existe
+    if "paciente_id" in colunas_existentes and paciente_id is not None:
+        colunas.append("paciente_id")
+        valores.append(paciente_id)
+
+    # Incluir inicio (data+hora combinados) se a coluna existe
+    if "inicio" in colunas_existentes:
+        inicio = f"{data}T{hora}:00" if data and hora else criado_em
+        colunas.append("inicio")
+        valores.append(inicio)
+
+    # Incluir created_at/updated_at se existem
+    if "created_at" in colunas_existentes:
+        colunas.append("created_at")
+        valores.append(criado_em)
+    if "updated_at" in colunas_existentes:
+        colunas.append("updated_at")
+        valores.append(criado_em)
+
+    placeholders = ", ".join(["?"] * len(valores))
+    col_names = ", ".join(colunas)
+
     try:
         cursor.execute(f"""
-            INSERT INTO agendamentos (
-                {col_data}, hora, paciente, tutor, telefone, servico,
-                clinica, observacoes, status, criado_em, criado_por_id, criado_por_nome
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (data, hora, paciente, tutor, telefone, servico, clinica,
-              observacoes, status, criado_em, criado_por_id, criado_por_nome or ""))
+            INSERT INTO agendamentos ({col_names}) VALUES ({placeholders})
+        """, valores)
     except sqlite3.OperationalError:
         conn.close()
         raise
