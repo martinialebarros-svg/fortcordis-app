@@ -17,6 +17,12 @@ from PIL import Image
 from app.config import DB_PATH
 from app.db import _db_conn, _db_init
 from app.laudos_banco import _criar_tabelas_laudos_se_nao_existirem
+from app.services.restore_point import (
+    criar_restore_point,
+    listar_restore_points,
+    restaurar_restore_point,
+    excluir_restore_point,
+)
 from app.sql_safe import validar_tabela, validar_coluna
 from app.utils import _norm_key
 from modules.rbac import verificar_permissao, obter_permissoes_usuario
@@ -37,12 +43,13 @@ def render_configuracoes():
     
     st.title("⚙️ Configurações do Sistema")
     # Cria abas
-    tab_permissoes, tab_usuarios, tab_papeis, tab_sistema, tab_importar, tab_assinatura, tab_diagnostico = st.tabs([
+    tab_permissoes, tab_usuarios, tab_papeis, tab_sistema, tab_importar, tab_restore, tab_assinatura, tab_diagnostico = st.tabs([
         "🔐 Minhas Permissões",
         "👥 Usuários do Sistema",
         "🎭 Papéis e Permissões",
         "⚙️ Configurações Gerais",
         "📥 Importar dados",
+        "💾 Restore Points",
         "🖊️ Assinatura/Carimbo",
         "📊 Diagnóstico (memória/CPU)"
     ])
@@ -1457,6 +1464,117 @@ def render_configuracoes():
                     st.error(f"Erro ao processar arquivo: {e}")
                     with st.expander("Detalhes técnicos do erro (para diagnóstico)"):
                         st.code(traceback.format_exc(), language="text")
+
+    # ============================================================================
+    # ABA: RESTORE POINTS
+    # ============================================================================
+    with tab_restore:
+        st.subheader("💾 Restore Points")
+        st.caption(
+            "Crie snapshots do banco de dados para restaurar o sistema a um estado anterior. "
+            "Útil antes de importações, atualizações ou grandes alterações."
+        )
+
+        # --- Criar restore point ---
+        st.markdown("#### Criar Restore Point")
+        col_rp1, col_rp2 = st.columns([3, 1])
+        with col_rp1:
+            rp_descricao = st.text_input(
+                "Descrição (opcional)",
+                key="rp_descricao",
+                placeholder="Ex: antes_importacao, versao_estavel",
+                help="Breve descrição para identificar este restore point.",
+            )
+        with col_rp2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            btn_criar_rp = st.button("💾 Criar Restore Point", key="btn_criar_rp", type="primary", use_container_width=True)
+
+        if btn_criar_rp:
+            with st.spinner("Criando restore point..."):
+                ok, msg, nome = criar_restore_point(rp_descricao)
+            if ok:
+                st.success(f"✅ {msg}")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error(f"❌ {msg}")
+
+        st.markdown("---")
+
+        # --- Listar restore points ---
+        st.markdown("#### Restore Points Disponíveis")
+        pontos = listar_restore_points()
+
+        if not pontos:
+            st.info("Nenhum restore point criado ainda. Crie o primeiro acima.")
+        else:
+            st.caption(f"{len(pontos)} restore point(s) disponível(is)")
+
+            for idx, ponto in enumerate(pontos):
+                with st.expander(
+                    f"📁 {ponto['nome']}  —  {ponto['data_criacao']}  ({ponto['tamanho_kb']:.0f} KB)"
+                    + (f"  [{ponto['descricao']}]" if ponto["descricao"] else ""),
+                    expanded=False,
+                ):
+                    st.markdown(f"**Arquivo:** `{ponto['nome']}`")
+                    st.markdown(f"**Data:** {ponto['data_criacao']}")
+                    st.markdown(f"**Tamanho:** {ponto['tamanho_kb']:.1f} KB")
+                    if ponto["descricao"]:
+                        st.markdown(f"**Descrição:** {ponto['descricao']}")
+
+                    col_act1, col_act2 = st.columns(2)
+                    with col_act1:
+                        if st.button("🔄 Restaurar", key=f"rp_restaurar_{idx}", use_container_width=True):
+                            st.session_state[f"rp_confirmar_restaurar_{idx}"] = True
+
+                    with col_act2:
+                        if st.button("🗑️ Excluir", key=f"rp_excluir_{idx}", use_container_width=True):
+                            st.session_state[f"rp_confirmar_excluir_{idx}"] = True
+
+                    # Confirmação de restauração
+                    if st.session_state.get(f"rp_confirmar_restaurar_{idx}"):
+                        st.warning(
+                            "⚠️ **Atenção:** Restaurar irá substituir o banco de dados atual. "
+                            "Um backup de segurança será criado automaticamente antes da restauração."
+                        )
+                        col_conf1, col_conf2 = st.columns(2)
+                        with col_conf1:
+                            if st.button("✅ Confirmar Restauração", key=f"rp_conf_rest_{idx}", type="primary", use_container_width=True):
+                                with st.spinner("Restaurando..."):
+                                    ok, msg = restaurar_restore_point(ponto["nome"])
+                                if ok:
+                                    st.success(f"✅ {msg}")
+                                    try:
+                                        _db_conn.clear()
+                                    except Exception:
+                                        pass
+                                    st.info("Recarregue a página (F5) para garantir que os dados atualizados apareçam.")
+                                    st.session_state.pop(f"rp_confirmar_restaurar_{idx}", None)
+                                else:
+                                    st.error(f"❌ {msg}")
+                        with col_conf2:
+                            if st.button("❌ Cancelar", key=f"rp_cancel_rest_{idx}", use_container_width=True):
+                                st.session_state.pop(f"rp_confirmar_restaurar_{idx}", None)
+                                st.rerun()
+
+                    # Confirmação de exclusão
+                    if st.session_state.get(f"rp_confirmar_excluir_{idx}"):
+                        st.warning("⚠️ Tem certeza que deseja excluir este restore point?")
+                        col_del1, col_del2 = st.columns(2)
+                        with col_del1:
+                            if st.button("✅ Confirmar Exclusão", key=f"rp_conf_del_{idx}", use_container_width=True):
+                                ok, msg = excluir_restore_point(ponto["nome"])
+                                if ok:
+                                    st.success(f"✅ {msg}")
+                                    st.session_state.pop(f"rp_confirmar_excluir_{idx}", None)
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {msg}")
+                        with col_del2:
+                            if st.button("❌ Cancelar", key=f"rp_cancel_del_{idx}", use_container_width=True):
+                                st.session_state.pop(f"rp_confirmar_excluir_{idx}", None)
+                                st.rerun()
 
     # ============================================================================
     # ABA: ASSINATURA/CARIMBO (usada nos laudos)
