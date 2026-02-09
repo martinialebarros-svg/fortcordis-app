@@ -1511,37 +1511,41 @@ def render_configuracoes():
             st.caption(f"{len(pontos)} restore point(s) disponível(is)")
 
             for idx, ponto in enumerate(pontos):
+                rp_id = ponto["id"]
+                label_desc = f"  [{ponto['descricao']}]" if ponto["descricao"] else ""
                 with st.expander(
-                    f"📁 {ponto['nome']}  —  {ponto['data_criacao']}  ({ponto['tamanho_kb']:.0f} KB)"
-                    + (f"  [{ponto['descricao']}]" if ponto["descricao"] else ""),
+                    f"📁 {ponto['nome']}  —  {ponto['data_criacao']}  "
+                    f"({ponto['tamanho_kb']:.0f} KB, comprimido {ponto['tamanho_comprimido_kb']:.0f} KB)"
+                    + label_desc,
                     expanded=False,
                 ):
-                    st.markdown(f"**Arquivo:** `{ponto['nome']}`")
+                    st.markdown(f"**Nome:** `{ponto['nome']}`")
                     st.markdown(f"**Data:** {ponto['data_criacao']}")
-                    st.markdown(f"**Tamanho:** {ponto['tamanho_kb']:.1f} KB")
+                    st.markdown(f"**Tamanho original:** {ponto['tamanho_kb']:.1f} KB")
+                    st.markdown(f"**Tamanho comprimido:** {ponto['tamanho_comprimido_kb']:.1f} KB")
                     if ponto["descricao"]:
                         st.markdown(f"**Descrição:** {ponto['descricao']}")
 
                     col_act1, col_act2 = st.columns(2)
                     with col_act1:
-                        if st.button("🔄 Restaurar", key=f"rp_restaurar_{idx}", use_container_width=True):
-                            st.session_state[f"rp_confirmar_restaurar_{idx}"] = True
+                        if st.button("🔄 Restaurar", key=f"rp_restaurar_{rp_id}", use_container_width=True):
+                            st.session_state[f"rp_confirmar_restaurar_{rp_id}"] = True
 
                     with col_act2:
-                        if st.button("🗑️ Excluir", key=f"rp_excluir_{idx}", use_container_width=True):
-                            st.session_state[f"rp_confirmar_excluir_{idx}"] = True
+                        if st.button("🗑️ Excluir", key=f"rp_excluir_{rp_id}", use_container_width=True):
+                            st.session_state[f"rp_confirmar_excluir_{rp_id}"] = True
 
                     # Confirmação de restauração
-                    if st.session_state.get(f"rp_confirmar_restaurar_{idx}"):
+                    if st.session_state.get(f"rp_confirmar_restaurar_{rp_id}"):
                         st.warning(
                             "⚠️ **Atenção:** Restaurar irá substituir o banco de dados atual. "
                             "Um backup de segurança será criado automaticamente antes da restauração."
                         )
                         col_conf1, col_conf2 = st.columns(2)
                         with col_conf1:
-                            if st.button("✅ Confirmar Restauração", key=f"rp_conf_rest_{idx}", type="primary", use_container_width=True):
+                            if st.button("✅ Confirmar Restauração", key=f"rp_conf_rest_{rp_id}", type="primary", use_container_width=True):
                                 with st.spinner("Restaurando..."):
-                                    ok, msg = restaurar_restore_point(ponto["nome"])
+                                    ok, msg = restaurar_restore_point(rp_id)
                                 if ok:
                                     st.success(f"✅ {msg}")
                                     try:
@@ -1549,31 +1553,31 @@ def render_configuracoes():
                                     except Exception:
                                         pass
                                     st.info("Recarregue a página (F5) para garantir que os dados atualizados apareçam.")
-                                    st.session_state.pop(f"rp_confirmar_restaurar_{idx}", None)
+                                    st.session_state.pop(f"rp_confirmar_restaurar_{rp_id}", None)
                                 else:
                                     st.error(f"❌ {msg}")
                         with col_conf2:
-                            if st.button("❌ Cancelar", key=f"rp_cancel_rest_{idx}", use_container_width=True):
-                                st.session_state.pop(f"rp_confirmar_restaurar_{idx}", None)
+                            if st.button("❌ Cancelar", key=f"rp_cancel_rest_{rp_id}", use_container_width=True):
+                                st.session_state.pop(f"rp_confirmar_restaurar_{rp_id}", None)
                                 st.rerun()
 
                     # Confirmação de exclusão
-                    if st.session_state.get(f"rp_confirmar_excluir_{idx}"):
+                    if st.session_state.get(f"rp_confirmar_excluir_{rp_id}"):
                         st.warning("⚠️ Tem certeza que deseja excluir este restore point?")
                         col_del1, col_del2 = st.columns(2)
                         with col_del1:
-                            if st.button("✅ Confirmar Exclusão", key=f"rp_conf_del_{idx}", use_container_width=True):
-                                ok, msg = excluir_restore_point(ponto["nome"])
+                            if st.button("✅ Confirmar Exclusão", key=f"rp_conf_del_{rp_id}", use_container_width=True):
+                                ok, msg = excluir_restore_point(rp_id)
                                 if ok:
                                     st.success(f"✅ {msg}")
-                                    st.session_state.pop(f"rp_confirmar_excluir_{idx}", None)
+                                    st.session_state.pop(f"rp_confirmar_excluir_{rp_id}", None)
                                     time.sleep(1)
                                     st.rerun()
                                 else:
                                     st.error(f"❌ {msg}")
                         with col_del2:
-                            if st.button("❌ Cancelar", key=f"rp_cancel_del_{idx}", use_container_width=True):
-                                st.session_state.pop(f"rp_confirmar_excluir_{idx}", None)
+                            if st.button("❌ Cancelar", key=f"rp_cancel_del_{rp_id}", use_container_width=True):
+                                st.session_state.pop(f"rp_confirmar_excluir_{rp_id}", None)
                                 st.rerun()
 
     # ============================================================================
