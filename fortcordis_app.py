@@ -31,24 +31,45 @@ def _banco_precisa_seed():
     """Verifica se o banco precisa ser restaurado do seed."""
     if not _db_path.exists():
         return True
-    # Se o banco existe mas está vazio (sem usuários), também precisa do seed
+    # Se o arquivo existe mas é muito pequeno, provavelmente está corrompido
     try:
-        conn = sqlite3.connect(str(_db_path))
+        if _db_path.stat().st_size < 100:
+            return True
+    except OSError:
+        return True
+    # Se o banco existe, tenta verificar se tem usuários
+    try:
+        conn = sqlite3.connect(str(_db_path), timeout=5)
         count = conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]
         conn.close()
         return count == 0
     except Exception:
-        return True
+        # Banco existe e tem conteúdo, mas a query falhou
+        # (tabela não criada ainda, banco travado, etc.)
+        # NÃO sobrescrever — inicializar_banco() criará as tabelas depois
+        return False
+
+def _copiar_seed_com_limpeza():
+    """Copia o seed para o banco, removendo arquivos WAL/SHM residuais."""
+    # Remover arquivos WAL e SHM que possam existir de uma sessão anterior
+    for sufixo in ["-wal", "-shm"]:
+        arq = _db_path.parent / (_db_path.name + sufixo)
+        try:
+            if arq.exists():
+                arq.unlink()
+        except OSError:
+            pass
+    shutil.copy2(str(_seed_path), str(_db_path))
 
 if _seed_path.exists() and _banco_precisa_seed():
-    shutil.copy2(str(_seed_path), str(_db_path))
+    _copiar_seed_com_limpeza()
     print(f"[Fort Cordis] Banco restaurado a partir do seed ({_seed_path.stat().st_size} bytes)")
 elif not _db_path.exists():
     print("[Fort Cordis] AVISO: Banco nao existe e seed nao encontrado!")
 else:
     print(f"[Fort Cordis] Banco OK ({_db_path.stat().st_size} bytes)")
 
-del _project_root, _db_path, _seed_path, _banco_precisa_seed
+del _project_root, _db_path, _seed_path, _banco_precisa_seed, _copiar_seed_com_limpeza
 
 # ============================================================
 # VERSÃO E CONFIG (app/config.py)

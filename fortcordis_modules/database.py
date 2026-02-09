@@ -25,6 +25,14 @@ if DB_PATH.parent != Path("."):
 
 # Auto-restore: se o banco não existe e o seed está disponível, copia o seed
 if not DB_PATH.exists() and SEED_PATH.exists():
+    # Limpar arquivos WAL/SHM residuais antes de copiar o seed
+    for _sufixo in ["-wal", "-shm"]:
+        _arq_residual = DB_PATH.parent / (DB_PATH.name + _sufixo)
+        try:
+            if _arq_residual.exists():
+                _arq_residual.unlink()
+        except OSError:
+            pass
     shutil.copy2(str(SEED_PATH), str(DB_PATH))
     print(f"[Fort Cordis] Banco restaurado a partir do seed: {SEED_PATH}")
 

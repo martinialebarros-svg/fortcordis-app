@@ -76,7 +76,7 @@ def render_financeiro():
     # ---- Contas a Receber ----
     with tab_receber:
         st.markdown("### Todas as OS (últimas 20)")
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = sqlite3.connect(str(DB_PATH), timeout=10)
         contas = None
         try:
             contas = pd.read_sql_query("""
@@ -96,9 +96,10 @@ def render_financeiro():
                 st.dataframe(contas_display, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhuma OS gerada ainda. Faça um laudo ou marque agendamento como realizado.")
-        except Exception:
-            st.info("Nenhuma OS gerada ainda.")
-        conn.close()
+        except Exception as e:
+            st.warning(f"Erro ao consultar ordens de serviço: {e}")
+        finally:
+            conn.close()
 
         if contas is not None and not contas.empty and verificar_permissao("financeiro", "editar"):
             st.markdown("---")
