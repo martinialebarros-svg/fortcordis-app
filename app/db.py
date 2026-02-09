@@ -43,44 +43,61 @@ def get_db():
 
 
 def _db_conn_safe():
-    """Abre o banco; se corrompido/travado, reinicia o arquivo para o app voltar a abrir."""
-    conn = None
-    try:
-        conn = sqlite3.connect(str(DB_PATH), timeout=10, check_same_thread=False)
-        conn.execute("SELECT 1")
-        conn.row_factory = sqlite3.Row
-        return conn
-    except Exception as e:
-        logger.exception("Falha ao conectar ao banco: %s", e)
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
+    """Abre o banco com retentativas antes de recorrer a recuperação destrutiva."""
+    # Tenta conectar com retentativas (evita destruir o banco por erro transitório)
+    max_tentativas = 3
+    for tentativa in range(max_tentativas):
+        conn = None
         try:
-            path = Path(DB_PATH)
-            backup_path = None
-            if path.exists():
-                backup_path = path.parent / (path.stem + ".corrupted." + str(int(time.time())) + path.suffix)
-                try:
-                    path.rename(backup_path)
-                except Exception:
-                    try:
-                        path.unlink()
-                    except Exception:
-                        pass
-            path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(DB_PATH), timeout=DB_TIMEOUT, check_same_thread=False)
-            # Valida que a conexão realmente funciona
+            conn = sqlite3.connect(str(DB_PATH), timeout=DB_TIMEOUT_LONG, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("SELECT 1")
             conn.row_factory = sqlite3.Row
-            if "db_was_recovered" not in st.session_state:
-                st.session_state["db_was_recovered"] = True
-            logger.warning("Banco reiniciado após falha; backup em %s", backup_path or "N/A")
             return conn
         except Exception as e:
-            logger.error("Falha ao recuperar banco: %s", e)
-            raise RuntimeError(f"Não foi possível recuperar o banco de dados: {e}")
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            if tentativa < max_tentativas - 1:
+                logger.warning("Tentativa %d/%d de conexão ao banco falhou: %s", tentativa + 1, max_tentativas, e)
+                time.sleep(0.5 * (tentativa + 1))
+            else:
+                logger.exception("Todas as tentativas de conexão falharam: %s", e)
+
+    # Somente após esgotar as retentativas, tenta recuperação destrutiva
+    try:
+        path = Path(DB_PATH)
+        backup_path = None
+        if path.exists():
+            backup_path = path.parent / (path.stem + ".corrupted." + str(int(time.time())) + path.suffix)
+            try:
+                path.rename(backup_path)
+            except Exception:
+                try:
+                    path.unlink()
+                except Exception:
+                    pass
+            # Limpar arquivos WAL/SHM residuais
+            for sufixo in ["-wal", "-shm"]:
+                arq = path.parent / (path.name + sufixo)
+                try:
+                    if arq.exists():
+                        arq.unlink()
+                except OSError:
+                    pass
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(DB_PATH), timeout=DB_TIMEOUT, check_same_thread=False)
+        conn.execute("SELECT 1")
+        conn.row_factory = sqlite3.Row
+        if "db_was_recovered" not in st.session_state:
+            st.session_state["db_was_recovered"] = True
+        logger.warning("Banco reiniciado após falha; backup em %s", backup_path or "N/A")
+        return conn
+    except Exception as e:
+        logger.error("Falha ao recuperar banco: %s", e)
+        raise RuntimeError(f"Não foi possível recuperar o banco de dados: {e}")
 
 
 @st.cache_resource(show_spinner=False, max_entries=1)
