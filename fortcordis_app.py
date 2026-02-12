@@ -384,6 +384,7 @@ from database import (
     listar_financeiro_pendentes,
     garantir_colunas_financeiro,
     criar_os_ao_marcar_realizado,
+    garantir_tabelas_preco,
 )
 
 from integrations import (
@@ -681,12 +682,13 @@ def obter_imagens_para_pdf():
 
 
 # ==========================================================
-# 🗄️ Banco local (SQLite) - mesmo arquivo para Cadastros e Agendamentos
-# Usar pasta do projeto para que as clínicas cadastradas apareçam no dropdown
+# 🗄️ Banco local (SQLite) - SEMPRE data/fortcordis.db (igual app.config e fortcordis_modules.database)
+# Um único arquivo evita: serviço sumir no reload, aparecer em tabela errada, "já cadastrado" falso
 # ==========================================================
-PASTA_DB = Path(__file__).resolve().parent
+PASTA_DB = Path(__file__).resolve().parent / "data"
+PASTA_DB.mkdir(parents=True, exist_ok=True)
 DB_PATH = PASTA_DB / "fortcordis.db"
-# Usar o mesmo banco no módulo (financeiro, clinicas_parceiras, OS automática)
+# Garantir que o módulo database use o mesmo banco (já importado acima)
 if "database" in sys.modules:
     sys.modules["database"].DB_PATH = DB_PATH
 
@@ -694,9 +696,10 @@ if "database" in sys.modules:
 def _db_conn_safe():
     """Abre o banco; se estiver corrompido/travado (ex.: após 502 na importação), reinicia o arquivo para o app voltar a abrir."""
     import time
+    # check_same_thread=False: a conexão é cacheada com @st.cache_resource e o Streamlit pode rodar em outra thread no rerun
     conn = None
     try:
-        conn = sqlite3.connect(str(DB_PATH), timeout=10)
+        conn = sqlite3.connect(str(DB_PATH), timeout=10, check_same_thread=False)
         conn.execute("SELECT 1")
         conn.row_factory = sqlite3.Row
         return conn
@@ -718,7 +721,7 @@ def _db_conn_safe():
                     except Exception:
                         pass
             path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(DB_PATH))
+            conn = sqlite3.connect(str(DB_PATH), timeout=10, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             if "db_was_recovered" not in st.session_state:
                 st.session_state["db_was_recovered"] = True
@@ -4235,72 +4238,12 @@ except Exception as e:
 # Menu principal já definido no início do script (único radio, evita StreamlitDuplicateElementId)
 
 # ============================================================================
-# TELA: DASHBOARD
+# TELA: DASHBOARD (usa app.pages.dashboard = Painel da Clínica, igual ao prod)
 # ============================================================================
 
 if menu_principal == "🏠 Dashboard":
-    st.title("📊 Dashboard - Fort Cordis")
-    
-    st.markdown("### Resumo do Sistema")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    conn = sqlite3.connect(str(DB_PATH))
-    
-    with col1:
-        hoje = datetime.now().strftime("%Y-%m-%d")
-        try:
-            agends_hoje = listar_agendamentos(data_inicio=hoje, data_fim=hoje)
-            total = len([a for a in agends_hoje if (a.get("status") or "") != "Cancelado"])
-        except Exception:
-            total = 0
-        st.metric("Agendamentos Hoje", total)
-    
-    with col2:
-        amanha = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        try:
-            agends_amanha = listar_agendamentos(data_inicio=amanha, data_fim=amanha)
-            total = len([a for a in agends_amanha if (a.get("status") or "") in ("Agendado", "") or a.get("status") is None])
-        except Exception:
-            total = 0
-        st.metric("Pendentes Confirmação", total)
-    
-    with col3:
-        try:
-            a_receber = pd.read_sql_query(
-                "SELECT SUM(valor_final) as total FROM financeiro WHERE status_pagamento = 'pendente'",
-                conn
-            )
-            valor = a_receber['total'].iloc[0] if not a_receber.empty and a_receber['total'].iloc[0] else 0
-        except:
-            valor = 0
-        st.metric("Contas a Receber", f"R$ {valor:,.2f}")
-    
-    with col4:
-        try:
-            atrasados = pd.read_sql_query(
-                "SELECT COUNT(*) as total FROM acompanhamentos WHERE status = 'atrasado'",
-                conn
-            )
-            total = atrasados['total'].iloc[0] if not atrasados.empty else 0
-        except:
-            total = 0
-        st.metric("Retornos Atrasados", total)
-    
-    conn.close()
-    
-    st.markdown("---")
-    
-    st.success("✅ Sistema inicializado com sucesso!")
-    
-    st.info("""
-    ### 🎯 Fluxo integrado:
-    
-    1. **Agendamentos:** Crie agendamentos; use **"📲 Confirmar amanhã"** para listar os de amanhã e abrir o link WhatsApp da clínica e confirmar 24h antes.
-    2. **Laudos:** Em "🩺 Laudos e Exames" emita o laudo; a OS é criada automaticamente em Financeiro.
-    3. **Financeiro:** Veja as OS em **"💳 Contas a Receber"**; quando receber o pagamento, use **"✅ Dar baixa"** para marcar como pago (data e forma) e unificar tudo no sistema.
-    4. **Cadastros:** Mantenha clínicas com **WhatsApp** preenchido para o link de confirmação funcionar.
-    """)
+    import app.pages.dashboard as dash_page
+    dash_page.render_dashboard()
 
 # ============================================================================
 # TELA: AGENDAMENTOS
@@ -4331,10 +4274,25 @@ elif menu_principal == "📅 Agendamentos":
         
         with col2:
             telefone_agend = st.text_input("Telefone/WhatsApp", key="novo_agend_telefone")
+            # Serviços vêm do cadastro (Cadastros > Serviços) — mesmo banco data/fortcordis.db
+            try:
+                conn_serv = sqlite3.connect(str(DB_PATH))
+                cur_serv = conn_serv.cursor()
+                cur_serv.execute(
+                    "SELECT nome FROM servicos WHERE (ativo = 1 OR ativo IS NULL) ORDER BY nome"
+                )
+                lista_servicos = [row[0] for row in cur_serv.fetchall()]
+                conn_serv.close()
+            except Exception:
+                lista_servicos = []
+            if not lista_servicos:
+                lista_servicos = ["Ecocardiograma", "Consulta Cardiológica", "Retorno", "Eletrocardiograma", "Raio-X", "Pressão Arterial"]
+            lista_servicos.append("Outro")
             servico_agend = st.selectbox(
                 "Serviço",
-                ["Ecocardiograma", "Consulta Cardiológica", "Retorno", "Eletrocardiograma", "Raio-X", "Pressão Arterial", "Outro"],
-                key="novo_agend_servico"
+                options=lista_servicos,
+                key="novo_agend_servico",
+                help="Serviços cadastrados em Cadastros > Serviços"
             )
             # Busca clínicas cadastradas no MESMO banco de Cadastros > Clínicas Parceiras (DB_PATH)
             try:
@@ -4375,27 +4333,32 @@ elif menu_principal == "📅 Agendamentos":
                 st.error("O nome do paciente é obrigatório!")
             else:
                 try:
-                    agend_id = criar_agendamento(
-                        data=str(data_agend),
-                        hora=str(hora_agend.strftime("%H:%M")),
-                        paciente=paciente_agend,
-                        tutor=tutor_agend,
-                        telefone=telefone_agend,
-                        servico=servico_agend,
-                        clinica=clinica_agend,
-                        observacoes=observacoes_agend,
-                        criado_por_id=st.session_state.get("usuario_id"),
-                        criado_por_nome=st.session_state.get("usuario_nome", "")
-                    )
-                    st.success(f"✅ Agendamento #{agend_id} criado com sucesso!")
-                    st.balloons()
-                    
-                    # Limpa os campos
-                    for key in ['novo_agend_paciente', 'novo_agend_tutor', 'novo_agend_telefone', 'novo_agend_clinica', 'novo_agend_obs']:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    
-                    st.rerun()
+                    # Resolver paciente_id (obrigatório na tabela): criar/buscar tutor e paciente
+                    tutor_nome = (tutor_agend or "").strip() or (paciente_agend or "").strip()
+                    tutor_id = db_upsert_tutor(tutor_nome, telefone=telefone_agend or None)
+                    paciente_id = db_upsert_paciente(tutor_id, paciente_agend.strip()) if tutor_id else None
+                    if not paciente_id:
+                        st.error("Não foi possível cadastrar tutor/paciente. Verifique os dados.")
+                    else:
+                        agend_id = criar_agendamento(
+                            data=str(data_agend),
+                            hora=str(hora_agend.strftime("%H:%M")),
+                            paciente=paciente_agend,
+                            tutor=tutor_agend or tutor_nome,
+                            telefone=telefone_agend,
+                            servico=servico_agend,
+                            clinica=clinica_agend,
+                            observacoes=observacoes_agend,
+                            criado_por_id=st.session_state.get("usuario_id"),
+                            criado_por_nome=st.session_state.get("usuario_nome", ""),
+                            paciente_id=paciente_id,
+                        )
+                        st.success(f"✅ Agendamento #{agend_id} criado com sucesso!")
+                        st.balloons()
+                        for key in ['novo_agend_paciente', 'novo_agend_tutor', 'novo_agend_telefone', 'novo_agend_clinica', 'novo_agend_obs']:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao criar agendamento: {e}")
     
@@ -8006,13 +7969,23 @@ elif menu_principal == "🩺 Laudos e Exames":
                                         numero_os = gerar_numero_os()
                                         data_comp = datetime.now().strftime("%Y-%m-%d")
                                         descricao_os = f"Ecocardiograma - {nome_animal or 'Paciente'}"
-                                        cursor_fin.execute("""
-                                            INSERT INTO financeiro (
-                                                clinica_id, numero_os, descricao,
-                                                valor_bruto, valor_desconto, valor_final,
-                                                status_pagamento, data_competencia
-                                            ) VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-                                        """, (clinica_id_os, numero_os, descricao_os, vb, vd, vf, data_comp))
+                                        now_iso = datetime.now().isoformat()
+                                        # Incluir created_at/updated_at se existirem (evita NOT NULL constraint failed)
+                                        cursor_fin.execute("PRAGMA table_info(financeiro)")
+                                        col_fin = [r[1].lower() for r in cursor_fin.fetchall()]
+                                        cols_ins = ["clinica_id", "numero_os", "descricao", "valor_bruto", "valor_desconto", "valor_final", "status_pagamento", "data_competencia"]
+                                        vals_ins = [clinica_id_os, numero_os, descricao_os, vb, vd, vf, "pendente", data_comp]
+                                        if "created_at" in col_fin:
+                                            cols_ins.append("created_at")
+                                            vals_ins.append(now_iso)
+                                        if "updated_at" in col_fin:
+                                            cols_ins.append("updated_at")
+                                            vals_ins.append(now_iso)
+                                        placeholders = ", ".join(["?"] * len(vals_ins))
+                                        cursor_fin.execute(
+                                            f"INSERT INTO financeiro ({', '.join(cols_ins)}) VALUES ({placeholders})",
+                                            tuple(vals_ins)
+                                        )
                                         conn_fin.commit()
                                         _ = st.success(f"💰 OS {numero_os} criada: R$ {vf:,.2f} (pendente)")
                                     else:
@@ -9349,17 +9322,26 @@ elif menu_principal == "🏢 Cadastros":
         
         conn = sqlite3.connect(str(DB_PATH))
         try:
-            # Serviços com valor base
-            servicos = pd.read_sql_query("""
-                SELECT 
-                    nome as 'Serviço',
-                    valor_base as 'Valor Base',
-                    duracao_minutos as 'Duração (min)'
-                FROM servicos
-                WHERE (ativo = 1 OR ativo IS NULL)
-                ORDER BY nome
-            """, conn)
-            
+            # Garantir coluna duracao_minutos (bancos antigos podem não tê-la)
+            try:
+                cur_check = conn.execute("PRAGMA table_info(servicos)")
+                col_names = [r[1].lower() for r in cur_check.fetchall()]
+                tem_duracao = "duracao_minutos" in col_names
+            except Exception:
+                tem_duracao = False
+            if tem_duracao:
+                servicos = pd.read_sql_query("""
+                    SELECT nome as 'Serviço', valor_base as 'Valor Base', duracao_minutos as 'Duração (min)'
+                    FROM servicos WHERE (ativo = 1 OR ativo IS NULL) ORDER BY nome
+                """, conn)
+            else:
+                servicos = pd.read_sql_query("""
+                    SELECT nome as 'Serviço', valor_base as 'Valor Base'
+                    FROM servicos WHERE (ativo = 1 OR ativo IS NULL) ORDER BY nome
+                """, conn)
+                if not servicos.empty:
+                    servicos["Duração (min)"] = 60  # default para exibição
+
             if not servicos.empty:
                 servicos_display = servicos.copy()
                 servicos_display['Valor Base'] = servicos_display['Valor Base'].apply(lambda x: f"R$ {float(x):,.2f}")
@@ -9370,6 +9352,10 @@ elif menu_principal == "🏢 Cadastros":
             # Tabelas de preço (valores por serviço por tabela) — com edição direta
             st.markdown("---")
             st.markdown("### 📋 Valores por Tabela de Preço")
+            try:
+                garantir_tabelas_preco()
+            except Exception:
+                pass
             try:
                 tabelas = pd.read_sql_query("SELECT id, nome, descricao FROM tabelas_preco WHERE (ativo = 1 OR ativo IS NULL) ORDER BY id", conn)
             except Exception:
@@ -9398,24 +9384,88 @@ elif menu_principal == "🏢 Cadastros":
                                 "SELECT id, nome FROM servicos WHERE (ativo = 1 OR ativo IS NULL) ORDER BY nome",
                                 conn
                             )
-                        # Incluir serviço nesta tabela
-                        st.markdown("**➕ Incluir serviço**")
-                        col_add1, col_add2, col_add3 = st.columns([2, 1, 1])
-                        with col_add1:
-                            opcoes_add = [(0, "— Selecione um serviço —")] + [(int(r['id']), r['nome']) for _, r in df_resto.iterrows()]
+                        # Incluir serviço nesta tabela (opção de criar novo + serviços já cadastrados que não estão na tabela)
+                        with st.expander("**➕ Incluir serviço**", expanded=True):
+                            opcoes_add = [(-1, "➕ Criar novo serviço..."), (0, "— Selecione um serviço —")] + [(int(r['id']), r['nome']) for _, r in df_resto.iterrows()]
                             servico_add_id = st.selectbox(
                                 "Serviço a incluir",
                                 options=[x[0] for x in opcoes_add],
-                                format_func=lambda x: next(n for i, n in opcoes_add if i == x),
+                                format_func=lambda x, o=opcoes_add: next((n for i, n in o if i == x), str(x)),
                                 key=f"add_servico_t{tb_id}"
                             )
-                        with col_add2:
+                            # Se escolheu "Criar novo serviço", exibir campo do nome
+                            novo_serv_nome = ""
+                            if servico_add_id == -1:
+                                novo_serv_nome = st.text_input(
+                                    "Nome do novo serviço",
+                                    key=f"novo_serv_nome_t{tb_id}",
+                                    placeholder="Ex: Holter 24h"
+                                )
                             valor_add = st.number_input("Valor (R$)", min_value=0.0, value=0.0, step=10.0, format="%.2f", key=f"add_valor_t{tb_id}")
-                        with col_add3:
-                            st.write("")
-                            st.write("")
                             if st.button("Incluir", key=f"btn_incluir_t{tb_id}", type="primary"):
-                                if servico_add_id and servico_add_id != 0:
+                                if servico_add_id == -1:
+                                    # Criar novo serviço e incluir na tabela (compatível com data_cadastro ou created_at/updated_at)
+                                    if not novo_serv_nome or not str(novo_serv_nome).strip():
+                                        st.error("Digite o nome do novo serviço.")
+                                    else:
+                                        try:
+                                            cur_add = conn.cursor()
+                                            nome_limpo = str(novo_serv_nome).strip()
+                                            # Só considera "mesmo serviço" quando o nome é exatamente igual
+                                            cur_add.execute("SELECT id FROM servicos WHERE (ativo = 1 OR ativo IS NULL) AND nome = ? LIMIT 1", (nome_limpo,))
+                                            row_exist = cur_add.fetchone()
+                                            ids_na_tabela_atual = df_preco['servico_id'].astype(int).tolist() if not df_preco.empty else []
+                                            if row_exist:
+                                                exist_id = row_exist[0]
+                                                # Só avisar "já na tabela" se estiver na lista que o usuário vê (evita falso positivo)
+                                                ja_na_tabela = exist_id in ids_na_tabela_atual
+                                                if ja_na_tabela:
+                                                    st.warning(f"O serviço **{nome_limpo}** já está nesta tabela de preço. Para alterar o valor, use a lista de valores abaixo.")
+                                                else:
+                                                    try:
+                                                        cur_add.execute(
+                                                            "INSERT INTO servico_preco (servico_id, tabela_preco_id, valor) VALUES (?, ?, ?)",
+                                                            (exist_id, tb_id, valor_add)
+                                                        )
+                                                        conn.commit()
+                                                        st.success(f"✅ Serviço '{nome_limpo}' incluído na tabela (já existia no cadastro).")
+                                                        st.rerun()
+                                                    except sqlite3.IntegrityError:
+                                                        st.warning("Este serviço já está nesta tabela. Para alterar o valor, use a lista abaixo.")
+                                            else:
+                                                cur_add.execute("PRAGMA table_info(servicos)")
+                                                colunas_servicos = [row[1].lower() for row in cur_add.fetchall()]
+                                                cols = ["nome", "descricao", "valor_base", "ativo"]
+                                                vals = [nome_limpo, "", valor_add, 1]
+                                                agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                                if "data_cadastro" in colunas_servicos:
+                                                    cols.append("data_cadastro")
+                                                    vals.append(agora)
+                                                elif "created_at" in colunas_servicos:
+                                                    cols.append("created_at")
+                                                    vals.append(agora)
+                                                    if "updated_at" in colunas_servicos:
+                                                        cols.append("updated_at")
+                                                        vals.append(agora)
+                                                ph = ", ".join("?" * len(cols))
+                                                sql_serv = f"INSERT INTO servicos ({', '.join(cols)}) VALUES ({ph})"
+                                                cur_add.execute(sql_serv, vals)
+                                                novo_id = cur_add.lastrowid
+                                                cur_add.execute(
+                                                    "INSERT INTO servico_preco (servico_id, tabela_preco_id, valor) VALUES (?, ?, ?)",
+                                                    (novo_id, tb_id, valor_add)
+                                                )
+                                                conn.commit()
+                                                st.success(f"✅ Serviço '{nome_limpo}' criado e incluído na tabela.")
+                                                st.rerun()
+                                        except sqlite3.IntegrityError as e:
+                                            if "servico_preco" in str(e):
+                                                st.warning("Este serviço já está nesta tabela de preço. Para alterar o valor, use a lista de valores abaixo.")
+                                            else:
+                                                st.error(f"Serviço já existe com esse nome ou outro conflito: {e}")
+                                        except Exception as e:
+                                            st.error(f"Erro ao cadastrar/incluir: {e}")
+                                elif servico_add_id and servico_add_id != 0:
                                     try:
                                         cur_add = conn.cursor()
                                         cur_add.execute(
@@ -9428,7 +9478,7 @@ elif menu_principal == "🏢 Cadastros":
                                     except Exception as e:
                                         st.error(f"Erro ao incluir: {e}")
                                 else:
-                                    st.warning("Selecione um serviço.")
+                                    st.warning("Selecione um serviço ou crie um novo.")
                         # Apagar serviço desta tabela
                         if not df_preco.empty:
                             st.markdown("**🗑️ Remover serviço desta tabela**")
@@ -10426,6 +10476,8 @@ elif menu_principal == "⚙️ Configurações":
                         else:
                             try:
                                 conn_backup = sqlite3.connect(tmp_path)
+                            except Exception:
+                                pass
                             conn_backup.row_factory = sqlite3.Row
                             cur_b = conn_backup.cursor()
                             # Pré-visualizar conteúdo do backup
@@ -10860,30 +10912,8 @@ elif menu_principal == "⚙️ Configurações":
                                 st.warning(
                                     "O backup tinha dados mas nada foi inserido. Verifique se o arquivo .db foi gerado pelo exportar_backup.py e se as tabelas existem no backup."
                                 )
-                        except Exception as e:
-                            st.error(f"Erro ao importar: {e}")
-                            with st.expander("Detalhes técnicos do erro (para diagnóstico)"):
-                                st.code(traceback.format_exc(), language="text")
-                        finally:
-                            try:
-                                if conn_backup is not None:
-                                    conn_backup.close()
-                            except Exception:
-                                pass
-                            try:
-                                if conn_local is not None:
-                                    conn_local.close()
-                            except Exception:
-                                pass
-                            try:
-                                if tmp_path and os.path.exists(tmp_path):
-                                    os.remove(tmp_path)
-                            except Exception:
-                                pass
                     except Exception as e:
-                        st.error(f"Erro ao processar arquivo: {e}")
-                        with st.expander("Detalhes técnicos do erro (para diagnóstico)"):
-                            st.code(traceback.format_exc(), language="text")
+                        st.error(f"Erro ao importar backup: {e}")
 
         # ============================================================================
         # ABA: ASSINATURA/CARIMBO (usada nos laudos)
