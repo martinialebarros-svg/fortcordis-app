@@ -9,3 +9,6 @@ fpdf2>=2.7.0
 Pillow>=10.0
 bcrypt>=4.0.0
 psutil>=5.9.0
+
+# MySQL (usar APENAS se configurado para MySQL remoto)
+mysql-connector-python>=8.0.0

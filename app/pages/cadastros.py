@@ -1,6 +1,7 @@
 # app/pages/cadastros.py
 """Página Cadastros: clínicas parceiras, serviços e tabelas de preço."""
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -8,7 +9,7 @@ import streamlit as st
 
 from app.components import tabela_tabular
 from app.config import DB_PATH
-from fortcordis_modules.database import garantir_tabelas_financeiro_extras
+from fortcordis_modules.database import garantir_tabelas_financeiro_extras, garantir_tabelas_preco
 from modules.rbac import verificar_permissao
 
 
@@ -276,10 +277,22 @@ def render_cadastros():
                         else:
                             try:
                                 cursor_s = conn.cursor()
-                                cursor_s.execute("""
-                                    INSERT INTO servicos (nome, descricao, valor_base, ativo, created_at, updated_at)
-                                    VALUES (?, ?, ?, 1, datetime('now'), datetime('now'))
-                                """, (novo_serv_nome.strip(), novo_serv_desc.strip(), novo_serv_valor))
+                                cursor_s.execute("PRAGMA table_info(servicos)")
+                                colunas = [row[1].lower() for row in cursor_s.fetchall()]
+                                cols = ["nome", "descricao", "valor_base", "ativo"]
+                                vals = [novo_serv_nome.strip(), novo_serv_desc.strip(), novo_serv_valor, 1]
+                                agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                if "data_cadastro" in colunas:
+                                    cols.append("data_cadastro")
+                                    vals.append(agora)
+                                elif "created_at" in colunas:
+                                    cols.append("created_at")
+                                    vals.append(agora)
+                                    if "updated_at" in colunas:
+                                        cols.append("updated_at")
+                                        vals.append(agora)
+                                ph = ", ".join("?" * len(cols))
+                                cursor_s.execute(f"INSERT INTO servicos ({', '.join(cols)}) VALUES ({ph})", vals)
                                 conn.commit()
                                 st.success(f"✅ Serviço '{novo_serv_nome}' cadastrado!")
                                 st.rerun()
@@ -292,7 +305,11 @@ def render_cadastros():
             st.markdown("---")
             st.markdown("### 📋 Valores por Tabela de Preço")
             try:
-                tabelas = pd.read_sql_query("SELECT id, nome, tipo as descricao FROM tabelas_preco WHERE (ativo = 1 OR ativo IS NULL) ORDER BY id", conn)
+                garantir_tabelas_preco()
+            except Exception:
+                pass
+            try:
+                tabelas = pd.read_sql_query("SELECT id, nome, descricao FROM tabelas_preco WHERE (ativo = 1 OR ativo IS NULL) ORDER BY id", conn)
             except Exception:
                 tabelas = pd.DataFrame()
             if not tabelas.empty:
@@ -306,50 +323,120 @@ def render_cadastros():
                             WHERE sp.tabela_preco_id = ?
                             ORDER BY s.nome
                         """, conn, params=(tb_id,))
-                        # Serviços que ainda não estão nesta tabela (para incluir)
-                        ids_na_tabela = df_preco['servico_id'].astype(int).tolist() if not df_preco.empty else []
-                        if ids_na_tabela:
-                            placeholders = ",".join("?" * len(ids_na_tabela))
-                            df_resto = pd.read_sql_query(
-                                f"SELECT id, nome FROM servicos WHERE (ativo = 1 OR ativo IS NULL) AND id NOT IN ({placeholders}) ORDER BY nome",
-                                conn, params=ids_na_tabela
-                            )
-                        else:
-                            df_resto = pd.read_sql_query(
-                                "SELECT id, nome FROM servicos WHERE (ativo = 1 OR ativo IS NULL) ORDER BY nome",
-                                conn
-                            )
-                        # Incluir serviço nesta tabela
-                        st.markdown("**➕ Incluir serviço**")
-                        col_add1, col_add2, col_add3 = st.columns([2, 1, 1])
-                        with col_add1:
-                            opcoes_add = [(0, "— Selecione um serviço —")] + [(int(r['id']), r['nome']) for _, r in df_resto.iterrows()]
-                            servico_add_id = st.selectbox(
-                                "Serviço a incluir",
-                                options=[x[0] for x in opcoes_add],
-                                format_func=lambda x: next(n for i, n in opcoes_add if i == x),
-                                key=f"add_servico_t{tb_id}"
-                            )
-                        with col_add2:
-                            valor_add = st.number_input("Valor (R$)", min_value=0.0, value=0.0, step=10.0, format="%.2f", key=f"add_valor_t{tb_id}")
-                        with col_add3:
-                            st.write("")
-                            st.write("")
-                            if st.button("Incluir", key=f"btn_incluir_t{tb_id}", type="primary"):
-                                if servico_add_id and servico_add_id != 0:
+                        # Formulário para incluir ou criar serviço
+                        with st.form(key=f"form_add_t{tb_id}", clear_on_submit=True):
+                            col1, col2, col3 = st.columns([2, 1.5, 1])
+                            with col1:
+                                # Buscar serviços existentes (para incluir na tabela)
+                                ids_na_tabela = df_preco['servico_id'].astype(int).tolist() if not df_preco.empty else []
+                                if ids_na_tabela:
+                                    placeholders = ",".join("?" * len(ids_na_tabela))
+                                    df_resto = pd.read_sql_query(
+                                        f"SELECT id, nome FROM servicos WHERE (ativo = 1 OR ativo IS NULL) AND id NOT IN ({placeholders}) ORDER BY nome",
+                                        conn, params=ids_na_tabela
+                                    )
+                                else:
+                                    df_resto = pd.read_sql_query(
+                                        "SELECT id, nome FROM servicos WHERE (ativo = 1 OR ativo IS NULL) ORDER BY nome",
+                                        conn
+                                    )
+
+                                # Sempre mostrar opção de criar novo + serviços disponíveis
+                                opcoes = [("novo", "➕ Criar novo serviço...")]
+                                if not df_resto.empty:
+                                    opcoes += [(str(r['id']), r['nome']) for _, r in df_resto.iterrows()]
+                                else:
+                                    opcoes.append(("todos", "Todos os serviços já estão na tabela"))
+
+                                servico_opcao = st.selectbox(
+                                    "Serviço",
+                                    options=[x[0] for x in opcoes],
+                                    format_func=lambda x: next((n for i, n in opcoes if i == x), str(x)),
+                                    key=f"opcao_t{tb_id}"
+                                )
+
+                                # Mostrar mensagem se todos serviços já estão na tabela
+                                if servico_opcao == "todos":
+                                    st.caption("Todos os serviços já estão incluídos nesta tabela")
+
+                            with col2:
+                                if servico_opcao == "novo":
+                                    nome_servico = st.text_input(
+                                        "Nome do novo serviço",
+                                        key=f"nome_novo_t{tb_id}",
+                                        placeholder="Ex: Holter 24h"
+                                    )
+                                else:
+                                    nome_servico = None
+
+                                valor_servico = st.number_input(
+                                    "Valor (R$)",
+                                    min_value=0.0,
+                                    value=0.0,
+                                    step=10.0,
+                                    format="%.2f",
+                                    key=f"valor_novo_t{tb_id}"
+                                )
+                            with col3:
+                                st.write("")
+                                botao_acao = st.form_submit_button(
+                                    "Criar" if servico_opcao == "novo" else "Incluir",
+                                    type="primary",
+                                    disabled=(servico_opcao == "todos")
+                                )
+
+                            if botao_acao:
+                                if servico_opcao == "novo":
+                                    # Criar novo serviço
+                                    if not nome_servico or not nome_servico.strip():
+                                        st.error("Digite o nome do serviço")
+                                    else:
+                                        try:
+                                            cur = conn.cursor()
+                                            cur.execute("PRAGMA table_info(servicos)")
+                                            colunas = [row[1].lower() for row in cur.fetchall()]
+                                            cols = ["nome", "descricao", "valor_base", "ativo"]
+                                            vals = [nome_servico.strip(), "", valor_servico, 1]
+                                            agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            if "data_cadastro" in colunas:
+                                                cols.append("data_cadastro")
+                                                vals.append(agora)
+                                            elif "created_at" in colunas:
+                                                cols.append("created_at")
+                                                vals.append(agora)
+                                                if "updated_at" in colunas:
+                                                    cols.append("updated_at")
+                                                    vals.append(agora)
+                                            ph = ", ".join("?" * len(cols))
+                                            cur.execute(f"INSERT INTO servicos ({', '.join(cols)}) VALUES ({ph})", vals)
+                                            novo_id = cur.lastrowid
+                                            cur.execute(
+                                                "INSERT INTO servico_preco (servico_id, tabela_preco_id, valor) VALUES (?, ?, ?)",
+                                                (novo_id, tb_id, valor_servico)
+                                            )
+                                            conn.commit()
+                                            st.success(f"✅ '{nome_servico}' criado e adicionado!")
+                                            st.rerun()
+                                        except sqlite3.IntegrityError:
+                                            st.error("Serviço já existe")
+                                        except Exception as e:
+                                            st.error(f"Erro: {e}")
+                                elif servico_opcao == "todos":
+                                    st.info("Todos os serviços já estão nesta tabela")
+                                else:
+                                    # Incluir serviço existente
                                     try:
-                                        cur_add = conn.cursor()
-                                        cur_add.execute(
+                                        sid = int(servico_opcao)
+                                        cur = conn.cursor()
+                                        cur.execute(
                                             "INSERT INTO servico_preco (servico_id, tabela_preco_id, valor) VALUES (?, ?, ?)",
-                                            (servico_add_id, tb_id, valor_add)
+                                            (sid, tb_id, valor_servico)
                                         )
                                         conn.commit()
-                                        st.success(f"Serviço incluído na tabela.")
+                                        st.success("Serviço incluído!")
                                         st.rerun()
                                     except Exception as e:
-                                        st.error(f"Erro ao incluir: {e}")
-                                else:
-                                    st.warning("Selecione um serviço.")
+                                        st.error(f"Erro: {e}")
                         # Apagar serviço desta tabela
                         if not df_preco.empty:
                             st.markdown("**🗑️ Remover serviço desta tabela**")

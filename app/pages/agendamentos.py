@@ -404,10 +404,25 @@ def render_agendamentos():
             tutor_agend = st.text_input("Tutor", key="novo_agend_tutor")
         with col2:
             telefone_agend = st.text_input("Telefone/WhatsApp", key="novo_agend_telefone")
+            # Serviços do cadastro (Cadastros > Serviços)
+            try:
+                conn_serv = sqlite3.connect(str(DB_PATH))
+                cur_serv = conn_serv.cursor()
+                cur_serv.execute(
+                    "SELECT nome FROM servicos WHERE (ativo = 1 OR ativo IS NULL) ORDER BY nome"
+                )
+                lista_servicos = [row[0] for row in cur_serv.fetchall()]
+                conn_serv.close()
+            except Exception:
+                lista_servicos = []
+            if not lista_servicos:
+                lista_servicos = ["Ecocardiograma", "Consulta Cardiológica", "Retorno", "Eletrocardiograma", "Raio-X", "Pressão Arterial"]
+            lista_servicos.append("Outro")
             servico_agend = st.selectbox(
                 "Serviço",
-                ["Ecocardiograma", "Consulta Cardiológica", "Retorno", "Eletrocardiograma", "Raio-X", "Pressão Arterial", "Outro"],
-                key="novo_agend_servico"
+                options=lista_servicos,
+                key="novo_agend_servico",
+                help="Serviços cadastrados em Cadastros > Serviços"
             )
             try:
                 conn_temp = sqlite3.connect(str(DB_PATH))

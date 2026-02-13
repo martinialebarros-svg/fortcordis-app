@@ -940,57 +940,67 @@ import hashlib
 # ============================================================================
 # FUNÇÕES DE SESSÃO LOCAL
 # ============================================================================
+# Em deploy (Vultr + Cloudflare): NÃO usamos arquivo de sessão (Path.home() é
+# do servidor; um único arquivo faria qualquer visitante entrar sem login).
+# Defina FORTCORDIS_DEPLOY=1 no systemd para ativar.
+# ============================================================================
+
+def _is_deploy():
+    """True quando o app está em servidor (app.fortcordis.com.br / stage)."""
+    v = os.environ.get("FORTCORDIS_DEPLOY", "").strip().lower()
+    if v in ("1", "true", "yes", "on"):
+        return True
+    if os.environ.get("STREAMLIT_SERVER_HEADLESS", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    return False
+
+
+def is_modo_deploy():
+    """Para exibir na sidebar: retorna True se FORTCORDIS_DEPLOY está ativo."""
+    return _is_deploy()
+
 
 def obter_caminho_sessao():
-    """Retorna caminho do arquivo de sessão persistente"""
-    # Usa pasta temporária do usuário
+    """Retorna caminho do arquivo de sessão persistente (só usado em uso local)."""
     pasta_sessao = Path.home() / ".fortcordis"
     pasta_sessao.mkdir(exist_ok=True)
     return pasta_sessao / "sessao.json"
 
 def salvar_sessao_persistente(token):
-    """Salva token em arquivo local"""
+    """Em deploy não salva (evita sessão compartilhada)."""
+    if _is_deploy():
+        return False
     try:
         arquivo_sessao = obter_caminho_sessao()
-        
         dados = {
             "token": token,
             "criado_em": datetime.now().isoformat(),
             "expira_em": (datetime.now() + timedelta(days=30)).isoformat()
         }
-        
         with open(arquivo_sessao, 'w') as f:
             json.dump(dados, f)
-
         logger.info(f"Sessão salva em: {arquivo_sessao}")
         return True
-
     except Exception as e:
         logger.error(f"Erro ao salvar sessão: {e}")
         return False
 
 def carregar_sessao_persistente():
-    """Carrega token do arquivo local se ainda válido"""
+    """Em deploy retorna None (login sempre exigido em novo dispositivo)."""
+    if _is_deploy():
+        return None
     try:
         arquivo_sessao = obter_caminho_sessao()
-        
         if not arquivo_sessao.exists():
             return None
-        
         with open(arquivo_sessao, 'r') as f:
             dados = json.load(f)
-        
-        # Verifica se expirou
         expira_em = datetime.fromisoformat(dados["expira_em"])
-        
         if datetime.now() > expira_em:
-            # Expirado, remove arquivo
             arquivo_sessao.unlink()
             return None
-
         logger.info(f"Sessão recuperada de: {arquivo_sessao}")
         return dados["token"]
-
     except Exception as e:
         logger.error(f"Erro ao carregar sessão: {e}")
         return None
@@ -1208,6 +1218,8 @@ def mostrar_tela_login():
     # FORMULÁRIO
     # ========================================================================
     
+    if _is_deploy():
+        st.caption("🔒 Modo deploy: login obrigatório em cada dispositivo/navegador.")
     st.markdown("### 🔐 Acesso ao Sistema")
     
     # Botão para abrir tela "Criar primeiro usuário"

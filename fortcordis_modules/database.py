@@ -88,7 +88,15 @@ def inicializar_banco():
             data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
+    # Garantir coluna duracao_minutos em bancos antigos que tinham servicos sem ela
+    try:
+        cursor.execute("PRAGMA table_info(servicos)")
+        cols_serv = [r[1].lower() for r in cursor.fetchall()]
+        if "duracao_minutos" not in cols_serv:
+            cursor.execute("ALTER TABLE servicos ADD COLUMN duracao_minutos INTEGER DEFAULT 60")
+    except Exception:
+        pass
+
     # Tabela de Pacotes (combos de serviços)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS pacotes (
@@ -473,6 +481,128 @@ def inicializar_banco():
 
     conn.commit()
     conn.close()
+
+
+def garantir_tabelas_preco():
+    """
+    Garante que as 4 tabelas de preço (Fortaleza, Região Metropolitana, Atendimento Domiciliar, Plantão)
+    e os valores em servico_preco existam. Cria as tabelas se não existirem (dev pode não ter rodado
+    inicializar_banco com esse schema). Chamado ao abrir Cadastros > Serviços.
+    """
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tabelas_preco (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL UNIQUE,
+                descricao TEXT,
+                ativo INTEGER DEFAULT 1,
+                data_cadastro TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS servico_preco (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                servico_id INTEGER NOT NULL,
+                tabela_preco_id INTEGER NOT NULL,
+                valor REAL NOT NULL,
+                UNIQUE(servico_id, tabela_preco_id),
+                FOREIGN KEY (servico_id) REFERENCES servicos(id),
+                FOREIGN KEY (tabela_preco_id) REFERENCES tabelas_preco(id)
+            )
+        """)
+        conn.commit()
+        cursor.execute("SELECT COUNT(*) FROM tabelas_preco")
+        if cursor.fetchone()[0] > 0:
+            conn.close()
+            return
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        conn.close()
+        return
+    try:
+        cursor.executemany(
+            "INSERT INTO tabelas_preco (id, nome, descricao) VALUES (?, ?, ?)",
+            [
+                (1, "Clínicas Fortaleza", "Tabela padrão clínicas em Fortaleza"),
+                (2, "Região Metropolitana", "Tabela região metropolitana"),
+                (3, "Atendimento Domiciliar", "Atendimento domiciliar particular"),
+                (4, "Clínicas Fortaleza - Plantão", "Semana após 18h | Sáb após 16h | Dom e Feriados"),
+            ],
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        conn.close()
+        return
+    try:
+        servicos_nomes = [
+            ("Consulta", "Consulta cardiológica", 230),
+            ("ECG", "Eletrocardiograma", 120),
+            ("Ecocardiograma", "Ecocardiograma", 180),
+            ("Pressão Arterial", "Aferição de pressão arterial", 40),
+            ("Drenagem Efusão", "Drenagem de efusão", 280),
+            ("Combo ECG + ECO", "ECG + Ecocardiograma", 250),
+            ("Consulta Plantão", "Consulta em horário de plantão", 290),
+            ("Eco Plantão", "Ecocardiograma plantão", 230),
+            ("ECG Plantão", "ECG plantão", 170),
+        ]
+        try:
+            for nome, desc, vb in servicos_nomes:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO servicos (nome, descricao, valor_base, ativo) VALUES (?, ?, ?, 1)",
+                    (nome, desc, vb),
+                )
+        except Exception:
+            pass
+        cursor.execute("SELECT id, nome FROM servicos")
+        servicos_map = {str(nome).strip(): sid for sid, nome in cursor.fetchall()}
+        if "Eletrocardiograma" in servicos_map and "ECG" not in servicos_map:
+            servicos_map["ECG"] = servicos_map["Eletrocardiograma"]
+        if "Eco + Eletro" in servicos_map and "Combo ECG + ECO" not in servicos_map:
+            servicos_map["Combo ECG + ECO"] = servicos_map["Eco + Eletro"]
+        precos_fortaleza = [
+            ("Consulta", 230), ("ECG", 120), ("Ecocardiograma", 180), ("Pressão Arterial", 40),
+            ("Drenagem Efusão", 280), ("Combo ECG + ECO", 250),
+        ]
+        precos_metropolitana = [
+            ("Consulta", 230), ("ECG", 150), ("Ecocardiograma", 200), ("Pressão Arterial", 60),
+            ("Combo ECG + ECO", 300),
+        ]
+        precos_domiciliar = [
+            ("Consulta", 290), ("Ecocardiograma", 290), ("ECG", 175), ("Pressão Arterial", 60),
+        ]
+        precos_plantao = [
+            ("Consulta Plantão", 290), ("Eco Plantão", 230), ("ECG Plantão", 170), ("Pressão Arterial", 60),
+        ]
+        for nome, valor in precos_fortaleza:
+            sid = servicos_map.get(nome)
+            if sid:
+                cursor.execute("INSERT OR IGNORE INTO servico_preco (servico_id, tabela_preco_id, valor) VALUES (?, 1, ?)", (sid, valor))
+        for nome, valor in precos_metropolitana:
+            sid = servicos_map.get(nome)
+            if sid:
+                cursor.execute("INSERT OR IGNORE INTO servico_preco (servico_id, tabela_preco_id, valor) VALUES (?, 2, ?)", (sid, valor))
+        for nome, valor in precos_domiciliar:
+            sid = servicos_map.get(nome)
+            if sid:
+                cursor.execute("INSERT OR IGNORE INTO servico_preco (servico_id, tabela_preco_id, valor) VALUES (?, 3, ?)", (sid, valor))
+        for nome, valor in precos_plantao:
+            sid = servicos_map.get(nome)
+            if sid:
+                cursor.execute("INSERT OR IGNORE INTO servico_preco (servico_id, tabela_preco_id, valor) VALUES (?, 4, ?)", (sid, valor))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _migrar_clinicas_legadas(conn):
